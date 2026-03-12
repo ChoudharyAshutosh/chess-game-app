@@ -1,44 +1,335 @@
-/**
- * Sample React Native App
- * https://github.com/facebook/react-native
- *
- * @format
- */
-
-import { NewAppScreen } from '@react-native/new-app-screen';
-import { StatusBar, StyleSheet, useColorScheme, View } from 'react-native';
+import React, {useState, useCallback, useEffect, useRef} from 'react';
 import {
-  SafeAreaProvider,
-  useSafeAreaInsets,
-} from 'react-native-safe-area-context';
+  View,
+  StyleSheet,
+  StatusBar,
+  BackHandler,
+  ToastAndroid,
+  Platform,
+} from 'react-native';
+import {SafeAreaProvider, SafeAreaView} from 'react-native-safe-area-context';
+import {
+  ChessBoard,
+  GameModeSelection,
+  ScoreBoard,
+  GameControls,
+  GameOverModal,
+} from './src/components';
+import {
+  INITIAL_BOARD,
+  getValidMoves,
+  movePiece,
+  getGameStatus,
+  getPieceColor,
+  getBestMove,
+} from './src/utils/chessUtils';
+import {initSounds, playSelectSound, playMoveSound, playKillSound, playErrorSound, releaseSounds} from './src/utils/soundUtils';
 
-function App() {
-  const isDarkMode = useColorScheme() === 'dark';
+const App = () => {
+  useEffect(() => {
+    initSounds();
+    return () => releaseSounds();
+  }, []);
 
   return (
     <SafeAreaProvider>
-      <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
-      <AppContent />
+      <StatusBar barStyle="light-content" backgroundColor="#0f0c29" />
+      <ChessGame />
     </SafeAreaProvider>
   );
-}
+};
 
-function AppContent() {
-  const safeAreaInsets = useSafeAreaInsets();
+const ChessGame = () => {
+  const [gameMode, setGameMode] = useState(null);
+  const [board, setBoard] = useState(INITIAL_BOARD.map(row => [...row]));
+  const [currentTurn, setCurrentTurn] = useState('white');
+  const [selectedSquare, setSelectedSquare] = useState(null);
+  const [validMoves, setValidMoves] = useState([]);
+  const [capturedWhite, setCapturedWhite] = useState([]);
+  const [capturedBlack, setCapturedBlack] = useState([]);
+  const [gameStatus, setGameStatus] = useState({status: 'playing'});
+  const [isMachineThinking, setIsMachineThinking] = useState(false);
+  const [movingPiece, setMovingPiece] = useState(null);
+  const [showGameOverModal, setShowGameOverModal] = useState(false);
+  
+  const machineMoveTimeoutRef = useRef(null);
+  const lastBackPressRef = useRef(null);
+
+  useEffect(() => {
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', handleBackPress);
+    return () => backHandler.remove();
+  }, [gameMode]);
+
+  useEffect(() => {
+    if (gameMode === 'PvM' && currentTurn === 'black' && !isMachineThinking && (gameStatus.status === 'playing' || gameStatus.status === 'check')) {
+      setIsMachineThinking(true);
+      machineMoveTimeoutRef.current = setTimeout(() => {
+        makeMachineMove();
+      }, 1000);
+    }
+    
+    return () => {
+      if (machineMoveTimeoutRef.current) {
+        clearTimeout(machineMoveTimeoutRef.current);
+      }
+    };
+  }, [currentTurn, gameMode, gameStatus.status]);
+
+  const handleBackPress = useCallback(() => {
+    if (gameMode === null) {
+      if (lastBackPressRef.current && Date.now() - lastBackPressRef.current < 1000) {
+        BackHandler.exitApp();
+        return true;
+      }
+      lastBackPressRef.current = Date.now();
+      if (Platform.OS === 'android') {
+        ToastAndroid.show('Press back again to exit', ToastAndroid.SHORT);
+      }
+      return true;
+    }
+    
+    if (lastBackPressRef.current && Date.now() - lastBackPressRef.current < 1000) {
+      BackHandler.exitApp();
+      return true;
+    }
+    lastBackPressRef.current = Date.now();
+    
+    if (Platform.OS === 'android') {
+      ToastAndroid.show('Press back again to exit', ToastAndroid.SHORT);
+    }
+    return true;
+  }, [gameMode]);
+
+  const makeMachineMove = useCallback(() => {
+    const move = getBestMove(board, 'black', 2);
+    
+    if (move) {
+      setMovingPiece({
+        fromRow: move.from.row,
+        fromCol: move.from.col,
+        toRow: move.to.row,
+        toCol: move.to.col,
+        isCapture: board[move.to.row][move.to.col] !== '',
+      });
+      
+      setTimeout(() => {
+        const {newBoard, capturedPiece} = movePiece(
+          board,
+          move.from.row,
+          move.from.col,
+          move.to.row,
+          move.to.col,
+        );
+
+        if (capturedPiece) {
+          if (getPieceColor(capturedPiece) === 'white') {
+            setCapturedWhite(prev => [...prev, capturedPiece]);
+          } else {
+            setCapturedBlack(prev => [...prev, capturedPiece]);
+          }
+          playKillSound();
+        }
+
+        setBoard(newBoard);
+        playMoveSound();
+        setCurrentTurn('white');
+        const newStatus = getGameStatus(newBoard, 'white');
+        setGameStatus(newStatus);
+        if (newStatus.status === 'check' || newStatus.status === 'checkmate') {
+          playErrorSound();
+        }
+        if (newStatus.status === 'checkmate' || newStatus.status === 'stalemate') {
+          setTimeout(() => setShowGameOverModal(true), 500);
+        }
+        
+        setTimeout(() => {
+          setMovingPiece(null);
+        }, 100);
+      }, 200);
+    }
+    
+    setIsMachineThinking(false);
+  }, [board]);
+
+  const resetGame = useCallback(() => {
+    setBoard(INITIAL_BOARD.map(row => [...row]));
+    setCurrentTurn('white');
+    setSelectedSquare(null);
+    setValidMoves([]);
+    setCapturedWhite([]);
+    setCapturedBlack([]);
+    setGameStatus({status: 'playing'});
+    setIsMachineThinking(false);
+    setMovingPiece(null);
+    setShowGameOverModal(false);
+  }, []);
+
+  const handleSelectMode = useCallback((mode) => {
+    setGameMode(mode);
+    resetGame();
+  }, [resetGame]);
+
+  const handleBackToMenu = useCallback(() => {
+    setGameMode(null);
+    resetGame();
+  }, [resetGame]);
+
+  const handleSquarePress = useCallback(
+    (row, col) => {
+      if (gameMode === 'PvM' && currentTurn === 'black') return;
+      if (isMachineThinking) return;
+      if (gameStatus.status === 'checkmate' || gameStatus.status === 'stalemate') return;
+
+      const piece = board[row][col];
+      const pieceColor = getPieceColor(piece);
+
+      if (selectedSquare) {
+        const isValidMove = validMoves.some(
+          m => m.row === row && m.col === col,
+        );
+
+        if (isValidMove) {
+          const isCapture = board[row][col] !== '';
+          
+          setMovingPiece({
+            fromRow: selectedSquare.row,
+            fromCol: selectedSquare.col,
+            toRow: row,
+            toCol: col,
+            isCapture,
+          });
+
+          setTimeout(() => {
+            const {newBoard, capturedPiece} = movePiece(
+              board,
+              selectedSquare.row,
+              selectedSquare.col,
+              row,
+              col,
+            );
+
+            if (capturedPiece) {
+              if (getPieceColor(capturedPiece) === 'white') {
+                setCapturedWhite(prev => [...prev, capturedPiece]);
+              } else {
+                setCapturedBlack(prev => [...prev, capturedPiece]);
+              }
+              playKillSound();
+            }
+
+            setBoard(newBoard);
+            playMoveSound();
+            const nextTurn = currentTurn === 'white' ? 'black' : 'white';
+            setCurrentTurn(nextTurn);
+            const newStatus = getGameStatus(newBoard, nextTurn);
+            setGameStatus(newStatus);
+            if (newStatus.status === 'check' || newStatus.status === 'checkmate') {
+              playErrorSound();
+            }
+            if (newStatus.status === 'checkmate' || newStatus.status === 'stalemate') {
+              setTimeout(() => setShowGameOverModal(true), 500);
+            }
+
+            setTimeout(() => {
+              setMovingPiece(null);
+            }, 100);
+          }, 200);
+
+          setSelectedSquare(null);
+          setValidMoves([]);
+          return;
+        } else if (selectedSquare && (selectedSquare.row !== row || selectedSquare.col !== col) && !piece) {
+          playErrorSound();
+          return;
+        }
+      }
+
+      if (piece && pieceColor === currentTurn) {
+        playSelectSound();
+        setSelectedSquare({row, col});
+        setValidMoves(getValidMoves(board, row, col));
+      } else {
+        setSelectedSquare(null);
+        setValidMoves([]);
+      }
+    },
+    [board, selectedSquare, validMoves, currentTurn, gameMode, isMachineThinking, gameStatus.status],
+  );
+
+  if (!gameMode) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.backgroundGradient}>
+          <GameModeSelection onSelectMode={handleSelectMode} />
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
-    <View style={styles.container}>
-      <NewAppScreen
-        templateFileName="App.tsx"
-        safeAreaInsets={safeAreaInsets}
+    <SafeAreaView style={styles.container}>
+      <View style={styles.backgroundGradient}>
+        <View style={styles.content}>
+          <View style={styles.boardSection}>
+            <ChessBoard
+              board={board}
+              selectedSquare={selectedSquare}
+              validMoves={validMoves}
+              onSquarePress={handleSquarePress}
+              movingPiece={movingPiece}
+              gameStatus={gameStatus}
+            />
+          </View>
+
+          <View style={styles.infoSection}>
+            <ScoreBoard
+              currentTurn={currentTurn}
+              gameMode={gameMode}
+              capturedWhite={capturedWhite}
+              capturedBlack={capturedBlack}
+              gameStatus={gameStatus}
+            />
+            
+            <GameControls
+              gameStatus={gameStatus}
+              onReset={resetGame}
+              onBack={handleBackToMenu}
+            />
+          </View>
+        </View>
+      </View>
+
+      <GameOverModal
+        visible={showGameOverModal}
+        gameStatus={gameStatus}
+        onClose={() => {
+          setShowGameOverModal(false);
+          resetGame();
+        }}
       />
-    </View>
+    </SafeAreaView>
   );
-}
+};
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  backgroundGradient: {
+    flex: 1,
+    backgroundColor: '#0f0c29',
+  },
+  content: {
+    flex: 1,
+  },
+  boardSection: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 10,
+  },
+  infoSection: {
+    paddingBottom: 10,
   },
 });
 
