@@ -110,7 +110,7 @@ const ChessGame = () => {
   }, [gameMode]);
 
   const makeMachineMove = useCallback(() => {
-    const move = getBestMove(board, 'black', 2);
+    const move = getBestMove(board, 'black', 3);
     
     if (move) {
       setMovingPiece({
@@ -184,11 +184,12 @@ const ChessGame = () => {
         
         setTimeout(() => {
           setMovingPiece(null);
+          setIsMachineThinking(false);
         }, 100);
       }, 200);
+    } else {
+      setIsMachineThinking(false);
     }
-    
-    setIsMachineThinking(false);
   }, [board]);
 
   const resetGame = useCallback(() => {

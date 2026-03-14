@@ -499,17 +499,22 @@ export const getBestMove = (board, color, depth = 3) => {
   
   if (allMoves.length === 0) return null;
   
+  allMoves.sort((a, b) => {
+    if (a.score !== b.score) {
+      if (color === 'white') return b.score - a.score;
+      return a.score - b.score;
+    }
+    if (a.isCapture !== b.isCapture) return b.isCapture ? 1 : -1;
+    return Math.random() - 0.5;
+  });
+  
   if (isInCheck) {
+    if (allMoves[0].score < -500) return null;
     const captures = allMoves.filter(m => m.isCapture);
     if (captures.length > 0) {
       return captures[0];
     }
     return allMoves[0];
-  }
-  
-  const captureMoves = allMoves.filter(m => m.isCapture);
-  if (captureMoves.length > 0) {
-    return captureMoves[0];
   }
   
   return allMoves[0];
