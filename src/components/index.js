@@ -5,3 +5,4 @@ export {default as GameModeSelection} from './GameModeSelection';
 export {default as ScoreBoard} from './ScoreBoard';
 export {default as GameControls} from './GameControls';
 export {default as GameOverModal} from './GameOverModal';
+export {default as PromotionModal} from './PromotionModal';

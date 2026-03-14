@@ -22,10 +22,8 @@ const GameOverModal = ({visible, gameStatus, capturedWhite, capturedBlack, onClo
     return capturedPieces.reduce((sum, piece) => sum + (PIECE_VALUES[piece] || 0), 0);
   };
 
-  const whiteScore = calculateScore(capturedWhite || []);
-  const blackScore = calculateScore(capturedBlack || []);
-  const totalWhite = whiteScore;
-  const totalBlack = blackScore;
+  const whiteScore = calculateScore(capturedBlack || []);
+  const blackScore = calculateScore(capturedWhite || []);
 
   return (
     <Modal
@@ -44,32 +42,36 @@ const GameOverModal = ({visible, gameStatus, capturedWhite, capturedBlack, onClo
           </Text>
 
           <View style={styles.scoreContainer}>
-            <View style={[styles.scoreBox, winner === 'white' && styles.winnerBox]}>
-              <Text style={styles.playerLabel}>White</Text>
-              <Text style={[styles.scoreText, winner === 'white' && styles.winnerText]}>
-                {totalWhite}
-              </Text>
-              <Text style={styles.capturedText}>
-                ({capturedWhite?.length || 0} pieces)
-              </Text>
+            <View style={styles.playerSection}>
+              <View style={[styles.scoreBox, winner === 'white' && styles.winnerBox]}>
+                <Text style={styles.playerLabel}>White</Text>
+                <Text style={[styles.scoreText, winner === 'white' && styles.winnerText]}>
+                  {whiteScore}
+                </Text>
+                <Text style={styles.capturedText}>
+                  ({capturedBlack?.length || 0} pieces)
+                </Text>
+              </View>
               {winner === 'white' && <Text style={styles.winnerLabel}>Winner!</Text>}
-              {winner === 'black' && <Text style={styles.loserLabel}>Loser</Text>}
+              {winner === 'black' && winner !== 'white' && <Text style={styles.loserLabel}>Loser</Text>}
             </View>
 
             <View style={styles.vsContainer}>
               <Text style={styles.vsText}>vs</Text>
             </View>
 
-            <View style={[styles.scoreBox, winner === 'black' && styles.winnerBox]}>
-              <Text style={styles.playerLabel}>Black</Text>
-              <Text style={[styles.scoreText, winner === 'black' && styles.winnerText]}>
-                {totalBlack}
-              </Text>
-              <Text style={styles.capturedText}>
-                ({capturedBlack?.length || 0} pieces)
-              </Text>
+            <View style={styles.playerSection}>
+              <View style={[styles.scoreBox, winner === 'black' && styles.winnerBox]}>
+                <Text style={styles.playerLabel}>Black</Text>
+                <Text style={[styles.scoreText, winner === 'black' && styles.winnerText]}>
+                  {blackScore}
+                </Text>
+                <Text style={styles.capturedText}>
+                  ({capturedWhite?.length || 0} pieces)
+                </Text>
+              </View>
               {winner === 'black' && <Text style={styles.winnerLabel}>Winner!</Text>}
-              {winner === 'white' && <Text style={styles.loserLabel}>Loser</Text>}
+              {winner === 'white' && winner !== 'black' && <Text style={styles.loserLabel}>Loser</Text>}
             </View>
           </View>
 
@@ -112,13 +114,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 24,
   },
+  playerSection: {
+    alignItems: 'center',
+  },
   scoreBox: {
-    width: 80,
-    height: 100,
+    width: 90,
+    height: 120,
     backgroundColor: 'rgba(255, 255, 255, 0.1)',
     borderRadius: 12,
-    justifyContent: 'center',
+    justifyContent: 'space-between',
     alignItems: 'center',
+    paddingVertical: 12,
     borderWidth: 2,
     borderColor: 'rgba(255, 255, 255, 0.2)',
   },
@@ -145,15 +151,16 @@ const styles = StyleSheet.create({
     color: '#FFD700',
   },
   winnerLabel: {
-    fontSize: 12,
+    fontSize: 18,
     color: '#FFD700',
-    marginTop: 4,
+    marginTop: 8,
     fontWeight: 'bold',
   },
   loserLabel: {
-    fontSize: 12,
+    fontSize: 18,
     color: 'rgba(255, 255, 255, 0.5)',
-    marginTop: 4,
+    marginTop: 8,
+    fontWeight: 'bold',
   },
   vsContainer: {
     marginHorizontal: 16,

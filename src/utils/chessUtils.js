@@ -371,11 +371,13 @@ export const movePiece = (board, fromRow, fromCol, toRow, toCol) => {
   newBoard[toRow][toCol] = piece;
   newBoard[fromRow][fromCol] = '';
   
+  let isPromotion = false;
   if ((piece === '♙' && toRow === 0) || (piece === '♟' && toRow === 7)) {
-    newBoard[toRow][toCol] = piece === '♙' ? '♕' : '♛';
+    newBoard[toRow][toCol] = piece;
+    isPromotion = true;
   }
 
-  return {newBoard, capturedPiece};
+  return {newBoard, capturedPiece, isPromotion};
 };
 
 export const isKingInCheck = (board, color) => {
@@ -408,26 +410,6 @@ export const isKingInCheck = (board, color) => {
   }
 
   return false;
-};
-
-export const evaluateBoard = (board) => {
-  let score = 0;
-  for (let r = 0; r < 8; r++) {
-    for (let c = 0; c < 8; c++) {
-      const piece = board[r][c];
-      if (!piece) continue;
-      
-      const color = getPieceColor(piece);
-      const value = PIECE_VALUES[piece] || 0;
-      
-      if (color === 'white') {
-        score += value;
-      } else {
-        score -= value;
-      }
-    }
-  }
-  return score;
 };
 
 export const getGameStatus = (board, currentTurn) => {

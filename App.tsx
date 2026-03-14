@@ -14,6 +14,7 @@ import {
   ScoreBoard,
   GameControls,
   GameOverModal,
+  PromotionModal,
 } from './src/components';
 import {
   INITIAL_BOARD,
@@ -24,6 +25,12 @@ import {
   getBestMove,
 } from './src/utils/chessUtils';
 import {initSounds, playSelectSound, playMoveSound, playKillSound, playErrorSound, releaseSounds} from './src/utils/soundUtils';
+
+const applyPromotion = (board, row, col, newPiece) => {
+  const newBoard = board.map(r => [...r]);
+  newBoard[row][col] = newPiece;
+  return newBoard;
+};
 
 const App = () => {
   useEffect(() => {
@@ -51,6 +58,8 @@ const ChessGame = () => {
   const [isMachineThinking, setIsMachineThinking] = useState(false);
   const [movingPiece, setMovingPiece] = useState(null);
   const [showGameOverModal, setShowGameOverModal] = useState(false);
+  const [showPromotionModal, setShowPromotionModal] = useState(false);
+  const [pendingPromotion, setPendingPromotion] = useState(null);
   
   const machineMoveTimeoutRef = useRef(null);
   const lastBackPressRef = useRef(null);
@@ -113,13 +122,44 @@ const ChessGame = () => {
       });
       
       setTimeout(() => {
-        const {newBoard, capturedPiece} = movePiece(
+        const {newBoard, capturedPiece, isPromotion} = movePiece(
           board,
           move.from.row,
           move.from.col,
           move.to.row,
           move.to.col,
         );
+
+        if (isPromotion) {
+          const promotedBoard = applyPromotion(newBoard, move.to.row, move.to.col, '♛');
+          
+          if (capturedPiece) {
+            if (getPieceColor(capturedPiece) === 'white') {
+              setCapturedWhite(prev => [...prev, capturedPiece]);
+            } else {
+              setCapturedBlack(prev => [...prev, capturedPiece]);
+            }
+            playKillSound();
+          }
+
+          setBoard(promotedBoard);
+          playMoveSound();
+          setCurrentTurn('white');
+          const newStatus = getGameStatus(promotedBoard, 'white');
+          setGameStatus(newStatus);
+          if (newStatus.status === 'check' || newStatus.status === 'checkmate') {
+            playErrorSound();
+          }
+          if (newStatus.status === 'checkmate' || newStatus.status === 'stalemate') {
+            setTimeout(() => setShowGameOverModal(true), 500);
+          }
+
+          setTimeout(() => {
+            setMovingPiece(null);
+          }, 100);
+          setIsMachineThinking(false);
+          return;
+        }
 
         if (capturedPiece) {
           if (getPieceColor(capturedPiece) === 'white') {
@@ -162,7 +202,51 @@ const ChessGame = () => {
     setIsMachineThinking(false);
     setMovingPiece(null);
     setShowGameOverModal(false);
+    setShowPromotionModal(false);
+    setPendingPromotion(null);
   }, []);
+
+  const handlePromotionComplete = useCallback((promotedBoard, capturedPiece) => {
+    if (capturedPiece) {
+      if (getPieceColor(capturedPiece) === 'white') {
+        setCapturedWhite(prev => [...prev, capturedPiece]);
+      } else {
+        setCapturedBlack(prev => [...prev, capturedPiece]);
+      }
+      playKillSound();
+    }
+
+    setBoard(promotedBoard);
+    playMoveSound();
+    const nextTurn = currentTurn === 'white' ? 'black' : 'white';
+    setCurrentTurn(nextTurn);
+    const newStatus = getGameStatus(promotedBoard, nextTurn);
+    setGameStatus(newStatus);
+    if (newStatus.status === 'check' || newStatus.status === 'checkmate') {
+      playErrorSound();
+    }
+    if (newStatus.status === 'checkmate' || newStatus.status === 'stalemate') {
+      setTimeout(() => setShowGameOverModal(true), 500);
+    }
+
+    setTimeout(() => {
+      setMovingPiece(null);
+    }, 100);
+  }, [currentTurn]);
+
+  const handlePromotionSelect = useCallback((selectedPiece) => {
+    if (!pendingPromotion) return;
+
+    const promotedBoard = applyPromotion(
+      board,
+      pendingPromotion.toRow,
+      pendingPromotion.toCol,
+      selectedPiece
+    );
+
+    setShowPromotionModal(false);
+    handlePromotionComplete(promotedBoard, pendingPromotion.capturedPiece);
+  }, [pendingPromotion, board, handlePromotionComplete]);
 
   const handleSelectMode = useCallback((mode) => {
     setGameMode(mode);
@@ -200,13 +284,48 @@ const ChessGame = () => {
           });
 
           setTimeout(() => {
-            const {newBoard, capturedPiece} = movePiece(
+            const {newBoard, capturedPiece, isPromotion} = movePiece(
               board,
               selectedSquare.row,
               selectedSquare.col,
               row,
               col,
             );
+
+            if (isPromotion) {
+              setMovingPiece({
+                fromRow: selectedSquare.row,
+                fromCol: selectedSquare.col,
+                toRow: row,
+                toCol: col,
+                isCapture: isCapture,
+              });
+
+              setTimeout(() => {
+                setBoard(newBoard);
+                setMovingPiece(null);
+                
+                setPendingPromotion({
+                  fromRow: selectedSquare.row,
+                  fromCol: selectedSquare.col,
+                  toRow: row,
+                  toCol: col,
+                  color: currentTurn,
+                  isCapture,
+                  capturedPiece,
+                });
+                setSelectedSquare(null);
+                setValidMoves([]);
+                
+                if (gameMode === 'PvM') {
+                  const promotedBoard = applyPromotion(newBoard, row, col, currentTurn === 'white' ? '♕' : '♛');
+                  handlePromotionComplete(promotedBoard, capturedPiece);
+                } else {
+                  setShowPromotionModal(true);
+                }
+              }, 200);
+              return;
+            }
 
             if (capturedPiece) {
               if (getPieceColor(capturedPiece) === 'white') {
@@ -308,6 +427,12 @@ const ChessGame = () => {
           setShowGameOverModal(false);
           resetGame();
         }}
+      />
+
+      <PromotionModal
+        visible={showPromotionModal}
+        color={pendingPromotion?.color}
+        onSelect={handlePromotionSelect}
       />
     </SafeAreaView>
   );
