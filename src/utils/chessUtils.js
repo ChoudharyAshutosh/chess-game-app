@@ -62,6 +62,118 @@ export const PIECE_VALUES = {
   '♚': 0,
 };
 
+const PAWN_TABLE = [
+  [0,  0,  0,  0,  0,  0,  0,  0],
+  [50, 50, 50, 50, 50, 50, 50, 50],
+  [10, 10, 20, 30, 30, 20, 10, 10],
+  [5,  5, 10, 25, 25, 10,  5,  5],
+  [0,  0,  0, 20, 20,  0,  0,  0],
+  [5, -5,-10,  0,  0,-10, -5,  5],
+  [5, 10, 10,-20,-20, 10, 10,  5],
+  [0,  0,  0,  0,  0,  0,  0,  0],
+];
+
+const KNIGHT_TABLE = [
+  [-50,-40,-30,-30,-30,-30,-40,-50],
+  [-40,-20,  0,  0,  0,  0,-20,-40],
+  [-30,  0, 10, 15, 15, 10,  0,-30],
+  [-30,  5, 15, 20, 20, 15,  5,-30],
+  [-30,  0, 15, 20, 20, 15,  0,-30],
+  [-30,  5, 10, 15, 15, 10,  5,-30],
+  [-40,-20,  0,  5,  5,  0,-20,-40],
+  [-50,-40,-30,-30,-30,-30,-40,-50],
+];
+
+const BISHOP_TABLE = [
+  [-20,-10,-10,-10,-10,-10,-10,-20],
+  [-10,  0,  0,  0,  0,  0,  0,-10],
+  [-10,  0,  5, 10, 10,  5,  0,-10],
+  [-10,  5,  5, 10, 10,  5,  5,-10],
+  [-10,  0, 10, 10, 10, 10,  0,-10],
+  [-10, 10, 10, 10, 10, 10, 10,-10],
+  [-10,  5,  0,  0,  0,  0,  5,-10],
+  [-20,-10,-10,-10,-10,-10,-10,-20],
+];
+
+const ROOK_TABLE = [
+  [0,  0,  0,  0,  0,  0,  0,  0],
+  [5, 10, 10, 10, 10, 10, 10,  5],
+  [-5,  0,  0,  0,  0,  0,  0, -5],
+  [-5,  0,  0,  0,  0,  0,  0, -5],
+  [-5,  0,  0,  0,  0,  0,  0, -5],
+  [-5,  0,  0,  0,  0,  0,  0, -5],
+  [-5,  0,  0,  0,  0,  0,  0, -5],
+  [0,  0,  0,  5,  5,  0,  0,  0],
+];
+
+const QUEEN_TABLE = [
+  [-20,-10,-10, -5, -5,-10,-10,-20],
+  [-10,  0,  0,  0,  0,  0,  0,-10],
+  [-10,  0,  5,  5,  5,  5,  0,-10],
+  [-5,  0,  5,  5,  5,  5,  0, -5],
+  [0,  0,  5,  5,  5,  5,  0, -5],
+  [-10,  5,  5,  5,  5,  5,  0,-10],
+  [-10,  0,  5,  0,  0,  0,  0,-10],
+  [-20,-10,-10, -5, -5,-10,-10,-20],
+];
+
+const KING_TABLE = [
+  [-30,-40,-40,-50,-50,-40,-40,-30],
+  [-30,-40,-40,-50,-50,-40,-40,-30],
+  [-30,-40,-40,-50,-50,-40,-40,-30],
+  [-30,-40,-40,-50,-50,-40,-40,-30],
+  [-20,-30,-30,-40,-40,-30,-30,-20],
+  [-10,-20,-20,-20,-20,-20,-20,-10],
+  [20, 20,  0,  0,  0,  0, 20, 20],
+  [20, 30, 10,  0,  0, 10, 30, 20],
+];
+
+const getPositionValue = (piece, row, col, color) => {
+  const table = {
+    '♙': PAWN_TABLE, '♟': PAWN_TABLE,
+    '♘': KNIGHT_TABLE, '♞': KNIGHT_TABLE,
+    '♗': BISHOP_TABLE, '♝': BISHOP_TABLE,
+    '♖': ROOK_TABLE, '♜': ROOK_TABLE,
+    '♕': QUEEN_TABLE, '♛': QUEEN_TABLE,
+    '♔': KING_TABLE, '♚': KING_TABLE,
+  }[piece];
+  
+  if (!table) return 0;
+  
+  const flippedRow = color === 'white' ? row : 7 - row;
+  return table[flippedRow][col];
+};
+
+export const evaluateBoard = (board) => {
+  let score = 0;
+  let whiteMaterial = 0;
+  let blackMaterial = 0;
+  
+  for (let r = 0; r < 8; r++) {
+    for (let c = 0; c < 8; c++) {
+      const piece = board[r][c];
+      if (!piece) continue;
+      
+      const color = getPieceColor(piece);
+      const value = PIECE_VALUES[piece] || 0;
+      const posValue = getPositionValue(piece, r, c, color);
+      
+      if (color === 'white') {
+        score += value + posValue * 0.1;
+        whiteMaterial += value;
+      } else {
+        score -= value + posValue * 0.1;
+        blackMaterial += value;
+      }
+    }
+  }
+  
+  if (whiteMaterial <= 0) return -10000;
+  if (blackMaterial <= 0) return 10000;
+  
+  return score;
+};
+
 export const INITIAL_BOARD = [
   ['♜', '♞', '♝', '♛', '♚', '♝', '♞', '♜'],
   ['♟', '♟', '♟', '♟', '♟', '♟', '♟', '♟'],
@@ -376,7 +488,7 @@ export const getRandomMove = (board, color) => {
   return allMoves[Math.floor(Math.random() * allMoves.length)];
 };
 
-export const getBestMove = (board, color, depth = 2) => {
+export const getBestMove = (board, color, depth = 3) => {
   const isInCheck = isKingInCheck(board, color);
   
   let allMoves = [];

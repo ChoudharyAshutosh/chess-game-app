@@ -7,15 +7,25 @@ import {
   StyleSheet,
   Dimensions,
 } from 'react-native';
+import {PIECE_VALUES} from '../utils/chessUtils';
 
 const {width: screenWidth} = Dimensions.get('window');
 
-const GameOverModal = ({visible, gameStatus, onClose}) => {
+const GameOverModal = ({visible, gameStatus, capturedWhite, capturedBlack, onClose}) => {
   if (!visible || !gameStatus) return null;
 
   const isCheckmate = gameStatus.status === 'checkmate';
   const isStalemate = gameStatus.status === 'stalemate';
   const winner = gameStatus.winner;
+
+  const calculateScore = (capturedPieces) => {
+    return capturedPieces.reduce((sum, piece) => sum + (PIECE_VALUES[piece] || 0), 0);
+  };
+
+  const whiteScore = calculateScore(capturedWhite || []);
+  const blackScore = calculateScore(capturedBlack || []);
+  const totalWhite = whiteScore;
+  const totalBlack = blackScore;
 
   return (
     <Modal
@@ -37,7 +47,10 @@ const GameOverModal = ({visible, gameStatus, onClose}) => {
             <View style={[styles.scoreBox, winner === 'white' && styles.winnerBox]}>
               <Text style={styles.playerLabel}>White</Text>
               <Text style={[styles.scoreText, winner === 'white' && styles.winnerText]}>
-                {winner === 'white' ? '1' : '0'}
+                {totalWhite}
+              </Text>
+              <Text style={styles.capturedText}>
+                ({capturedWhite?.length || 0} pieces)
               </Text>
               {winner === 'white' && <Text style={styles.winnerLabel}>Winner!</Text>}
               {winner === 'black' && <Text style={styles.loserLabel}>Loser</Text>}
@@ -50,7 +63,10 @@ const GameOverModal = ({visible, gameStatus, onClose}) => {
             <View style={[styles.scoreBox, winner === 'black' && styles.winnerBox]}>
               <Text style={styles.playerLabel}>Black</Text>
               <Text style={[styles.scoreText, winner === 'black' && styles.winnerText]}>
-                {winner === 'black' ? '1' : '0'}
+                {totalBlack}
+              </Text>
+              <Text style={styles.capturedText}>
+                ({capturedBlack?.length || 0} pieces)
               </Text>
               {winner === 'black' && <Text style={styles.winnerLabel}>Winner!</Text>}
               {winner === 'white' && <Text style={styles.loserLabel}>Loser</Text>}
@@ -119,6 +135,11 @@ const styles = StyleSheet.create({
     fontSize: 36,
     fontWeight: 'bold',
     color: '#fff',
+  },
+  capturedText: {
+    fontSize: 10,
+    color: 'rgba(255, 255, 255, 0.5)',
+    marginTop: 2,
   },
   winnerText: {
     color: '#FFD700',

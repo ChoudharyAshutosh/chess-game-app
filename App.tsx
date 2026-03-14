@@ -302,6 +302,8 @@ const ChessGame = () => {
       <GameOverModal
         visible={showGameOverModal}
         gameStatus={gameStatus}
+        capturedWhite={capturedWhite}
+        capturedBlack={capturedBlack}
         onClose={() => {
           setShowGameOverModal(false);
           resetGame();
