@@ -5,6 +5,13 @@ require Pod::Executable.execute_command('node', ['-p',
     {paths: [process.argv[1]]},
   )', __dir__]).strip
 
+# The React Native Maven mirror (repo.reactnative.dev) is tried ahead of Maven
+# Central for prebuilt artifacts and intermittently returns HTTP 429, which
+# aborts `pod install` outright rather than falling back. Maven Central serves
+# the same artifacts. Counterpart to react.internal.reactNativeMavenMirrorEnabled
+# in android/gradle.properties. Assigned with ||= so an explicit env var wins.
+ENV['RCT_REACT_NATIVE_MAVEN_MIRROR_ENABLED'] ||= 'false'
+
 platform :ios, min_ios_version_supported
 prepare_react_native_project!
 
