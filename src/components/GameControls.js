@@ -1,5 +1,6 @@
 import React from 'react';
 import {View, Text, TouchableOpacity, StyleSheet} from 'react-native';
+import {MaterialIcons} from '@react-native-vector-icons/material-icons/static';
 
 const GameControls = ({gameStatus, onReset, onBack}) => {
   const isGameOver = gameStatus.status === 'checkmate' || gameStatus.status === 'stalemate';
@@ -10,7 +11,7 @@ const GameControls = ({gameStatus, onReset, onBack}) => {
         style={styles.button}
         onPress={onBack}
         activeOpacity={0.7}>
-        <Text style={styles.buttonIcon}>⏮</Text>
+        <MaterialIcons name="arrow-back" size={20} color="#fff" />
         <Text style={styles.buttonText}>Menu</Text>
       </TouchableOpacity>
 
@@ -19,7 +20,7 @@ const GameControls = ({gameStatus, onReset, onBack}) => {
           style={[styles.button, styles.retryButton]}
           onPress={onReset}
           activeOpacity={0.7}>
-          <Text style={styles.buttonIcon}>🔄</Text>
+          <MaterialIcons name="replay" size={20} color="#fff" />
           <Text style={styles.buttonText}>Play Again</Text>
         </TouchableOpacity>
       )}
@@ -29,7 +30,7 @@ const GameControls = ({gameStatus, onReset, onBack}) => {
           style={[styles.button, styles.resetButton]}
           onPress={onReset}
           activeOpacity={0.7}>
-          <Text style={styles.buttonIcon}>↺</Text>
+          <MaterialIcons name="refresh" size={20} color="#fff" />
           <Text style={styles.buttonText}>Restart</Text>
         </TouchableOpacity>
       )}
@@ -66,9 +67,6 @@ const styles = StyleSheet.create({
   retryButton: {
     backgroundColor: 'rgba(76, 175, 80, 0.2)',
     borderColor: 'rgba(76, 175, 80, 0.3)',
-  },
-  buttonIcon: {
-    fontSize: 16,
   },
   buttonText: {
     color: '#fff',

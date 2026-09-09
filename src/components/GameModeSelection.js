@@ -6,8 +6,8 @@ import {
   StyleSheet,
   Dimensions,
   Animated,
-  Platform,
 } from 'react-native';
+import {MaterialDesignIcons} from '@react-native-vector-icons/material-design-icons/static';
 
 const {width: screenWidth, height: screenHeight} = Dimensions.get('window');
 
@@ -89,7 +89,12 @@ const GameModeSelection = ({onSelectMode}) => {
       ]}>
         <View style={styles.logoContainer}>
           <View style={styles.logoGlow}>
-            <Text style={styles.logo}>♔</Text>
+            <MaterialDesignIcons
+              name="chess-king"
+              size={70}
+              color="#FFD700"
+              style={styles.logo}
+            />
           </View>
         </View>
         
@@ -114,14 +119,22 @@ const GameModeSelection = ({onSelectMode}) => {
             </View>
             <View style={styles.buttonContent}>
               <View style={styles.iconContainer}>
-                <Text style={styles.modeIcon}>👥</Text>
+                <MaterialDesignIcons
+                  name="account-multiple"
+                  size={28}
+                  color="#fff"
+                />
               </View>
               <View style={styles.buttonTextContainer}>
                 <Text style={styles.modeTitle}>Player vs Player</Text>
                 <Text style={styles.modeDescription}>Challenge a friend</Text>
               </View>
               <View style={styles.arrow}>
-                <Text style={styles.arrowText}>→</Text>
+                <MaterialDesignIcons
+                  name="chevron-right"
+                  size={18}
+                  color="rgba(255, 255, 255, 0.6)"
+                />
               </View>
             </View>
           </AnimatedTouchable>
@@ -143,14 +156,18 @@ const GameModeSelection = ({onSelectMode}) => {
             </View>
             <View style={styles.buttonContent}>
               <View style={[styles.iconContainer, styles.iconContainerSecondary]}>
-                <Text style={styles.modeIcon}>🤖</Text>
+                <MaterialDesignIcons name="robot" size={28} color="#fff" />
               </View>
               <View style={styles.buttonTextContainer}>
                 <Text style={styles.modeTitle}>Player vs Machine</Text>
                 <Text style={styles.modeDescription}>Test your skills</Text>
               </View>
               <View style={styles.arrow}>
-                <Text style={styles.arrowText}>→</Text>
+                <MaterialDesignIcons
+                  name="chevron-right"
+                  size={18}
+                  color="rgba(255, 255, 255, 0.6)"
+                />
               </View>
             </View>
           </AnimatedTouchable>
@@ -198,8 +215,6 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 215, 0, 0.3)',
   },
   logo: {
-    fontSize: 70,
-    color: '#FFD700',
     textShadowColor: 'rgba(255, 215, 0, 0.8)',
     textShadowOffset: {width: 0, height: 0},
     textShadowRadius: 20,
@@ -264,9 +279,6 @@ const styles = StyleSheet.create({
   iconContainerSecondary: {
     backgroundColor: 'rgba(159, 112, 162, 0.35)',
   },
-  modeIcon: {
-    fontSize: 28,
-  },
   buttonTextContainer: {
     flex: 1,
   },
@@ -286,11 +298,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     backgroundColor: 'rgba(255, 255, 255, 0.1)',
     alignItems: 'center',
-    justifyContent: Platform.OS === 'ios' ? 'center' : 'flex-start',
-  },
-  arrowText: {
-    color: 'rgba(255, 255, 255, 0.6)',
-    fontSize: 18,
+    justifyContent: 'center',
   },
   footer: {
     marginTop: 40,

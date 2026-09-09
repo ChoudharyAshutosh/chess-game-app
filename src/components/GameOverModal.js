@@ -7,6 +7,7 @@ import {
   StyleSheet,
   Dimensions,
 } from 'react-native';
+import {MaterialDesignIcons} from '@react-native-vector-icons/material-design-icons/static';
 import {PIECE_VALUES} from '../utils/chessUtils';
 
 const {width: screenWidth} = Dimensions.get('window');
@@ -33,13 +34,21 @@ const GameOverModal = ({visible, gameStatus, capturedWhite, capturedBlack, onClo
       onRequestClose={onClose}>
       <View style={styles.overlay}>
         <View style={styles.container}>
-          <Text style={styles.title}>
-            {isCheckmate
-              ? '♔ Checkmate!'
-              : isStalemate
-              ? '🤝 Stalemate!'
-              : '♔ Game Over!'}
-          </Text>
+          <View style={styles.titleRow}>
+            <MaterialDesignIcons
+              name={isStalemate ? 'handshake' : 'chess-king'}
+              size={32}
+              color="#FFD700"
+              style={styles.titleIcon}
+            />
+            <Text style={styles.title}>
+              {isCheckmate
+                ? 'Checkmate!'
+                : isStalemate
+                ? 'Stalemate!'
+                : 'Game Over!'}
+            </Text>
+          </View>
 
           <View style={styles.scoreContainer}>
             <View style={styles.playerSection}>
@@ -100,11 +109,21 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255, 215, 0, 0.3)',
   },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  titleIcon: {
+    marginRight: 10,
+    textShadowColor: 'rgba(255, 215, 0, 0.5)',
+    textShadowOffset: {width: 0, height: 0},
+    textShadowRadius: 10,
+  },
   title: {
     fontSize: 32,
     fontWeight: 'bold',
     color: '#FFD700',
-    marginBottom: 24,
     textShadowColor: 'rgba(255, 215, 0, 0.5)',
     textShadowOffset: {width: 0, height: 0},
     textShadowRadius: 10,
