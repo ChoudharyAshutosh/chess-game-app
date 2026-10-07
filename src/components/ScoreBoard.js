@@ -30,8 +30,11 @@ const ScoreBoard = ({
     if (gameStatus.status === 'checkmate') {
       return 'CHECKMATE';
     }
-    if (gameStatus.status === 'stalemate') {
+    if (gameStatus.status === 'stalemate' || gameStatus.status === 'draw') {
       return 'DRAW';
+    }
+    if (gameStatus.status === 'resigned') {
+      return 'RESIGNED';
     }
     return '';
   };
@@ -44,7 +47,9 @@ const ScoreBoard = ({
       <View style={styles.playerCard}>
         <View style={[styles.indicator, currentTurn === 'white' && styles.activeIndicator]} />
         <View style={styles.playerInfo}>
-          <Text style={styles.playerLabel}>White</Text>
+          <Text style={styles.playerLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
+            White
+          </Text>
           <View style={styles.piecesRow}>
             {capturedBlack.length > 0 ? (
               capturedBlack.map((piece, index) => (
@@ -80,7 +85,7 @@ const ScoreBoard = ({
       <View style={[styles.playerCard, styles.playerCardRight]}>
         <View style={[styles.indicator, currentTurn === 'black' && styles.activeIndicator]} />
         <View style={styles.playerInfo}>
-          <Text style={styles.playerLabel}>
+          <Text style={styles.playerLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
             {gameMode === 'PvM' ? 'Machine' : 'Black'}
           </Text>
           <View style={styles.piecesRow}>
@@ -159,7 +164,7 @@ const styles = StyleSheet.create({
   },
   scoreContainer: {
     alignItems: 'center',
-    minWidth: 50,
+    minWidth: 40,
   },
   scoreLabel: {
     color: 'rgba(255, 255, 255, 0.5)',

@@ -8,16 +8,36 @@ import {
   Dimensions,
 } from 'react-native';
 import {MaterialDesignIcons} from '@react-native-vector-icons/material-design-icons/static';
-import {PIECE_VALUES} from '../utils/chessUtils';
+import {PIECE_VALUES, DRAW_REASON_TEXT} from '../utils/chessUtils';
 
 const {width: screenWidth} = Dimensions.get('window');
 
 const GameOverModal = ({visible, gameStatus, capturedWhite, capturedBlack, onClose}) => {
   if (!visible || !gameStatus) return null;
 
-  const isCheckmate = gameStatus.status === 'checkmate';
-  const isStalemate = gameStatus.status === 'stalemate';
-  const winner = gameStatus.winner;
+  const {status, winner, reason, loser} = gameStatus;
+  const isDraw = status === 'stalemate' || status === 'draw';
+  const colorName = color => (color === 'white' ? 'White' : 'Black');
+
+  const title =
+    status === 'checkmate'
+      ? 'Checkmate!'
+      : status === 'stalemate'
+      ? 'Stalemate!'
+      : status === 'draw'
+      ? 'Draw!'
+      : status === 'resigned'
+      ? 'Resigned'
+      : 'Game Over!';
+
+  const subtitle =
+    status === 'checkmate'
+      ? `${colorName(winner)} wins by checkmate`
+      : status === 'resigned'
+      ? `${colorName(loser)} resigned. ${colorName(winner)} wins`
+      : isDraw
+      ? `Draw: ${DRAW_REASON_TEXT[reason] || DRAW_REASON_TEXT.stalemate}`
+      : '';
 
   const calculateScore = (capturedPieces) => {
     return capturedPieces.reduce((sum, piece) => sum + (PIECE_VALUES[piece] || 0), 0);
@@ -36,19 +56,14 @@ const GameOverModal = ({visible, gameStatus, capturedWhite, capturedBlack, onClo
         <View style={styles.container}>
           <View style={styles.titleRow}>
             <MaterialDesignIcons
-              name={isStalemate ? 'handshake' : 'chess-king'}
+              name={isDraw ? 'handshake' : 'chess-king'}
               size={32}
               color="#FFD700"
               style={styles.titleIcon}
             />
-            <Text style={styles.title}>
-              {isCheckmate
-                ? 'Checkmate!'
-                : isStalemate
-                ? 'Stalemate!'
-                : 'Game Over!'}
-            </Text>
+            <Text style={styles.title}>{title}</Text>
           </View>
+          {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
 
           <View style={styles.scoreContainer}>
             <View style={styles.playerSection}>
@@ -112,7 +127,13 @@ const styles = StyleSheet.create({
   titleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 8,
+  },
+  subtitle: {
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.75)',
+    marginBottom: 20,
+    textAlign: 'center',
   },
   titleIcon: {
     marginRight: 10,

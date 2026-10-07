@@ -6,6 +6,7 @@ import {
   BackHandler,
   ToastAndroid,
   Platform,
+  Alert,
 } from 'react-native';
 import {SafeAreaProvider, SafeAreaView} from 'react-native-safe-area-context';
 import {
@@ -17,20 +18,23 @@ import {
   PromotionModal,
 } from './src/components';
 import {
-  INITIAL_BOARD,
+  createInitialState,
   getValidMoves,
-  movePiece,
+  makeMove,
+  applyMoveToBoard,
   getGameStatus,
   getPieceColor,
+  getPieceType,
   getBestMove,
+  isGameOver,
+  opponentOf,
+  shouldAcceptDraw,
 } from './src/utils/chessUtils';
 import {initSounds, playSelectSound, playMoveSound, playKillSound, playErrorSound, releaseSounds} from './src/utils/soundUtils';
 
-const applyPromotion = (board, row, col, newPiece) => {
-  const newBoard = board.map(r => [...r]);
-  newBoard[row][col] = newPiece;
-  return newBoard;
-};
+const MOVE_ANIMATION_MS = 200;
+const MACHINE_DELAY_MS = 600;
+const capitalize = color => color.charAt(0).toUpperCase() + color.slice(1);
 
 const App = () => {
   useEffect(() => {
@@ -48,208 +52,139 @@ const App = () => {
 
 const ChessGame = () => {
   const [gameMode, setGameMode] = useState(null);
-  const [board, setBoard] = useState(INITIAL_BOARD.map(row => [...row]));
-  const [currentTurn, setCurrentTurn] = useState('white');
+  const [game, setGame] = useState(createInitialState);
   const [selectedSquare, setSelectedSquare] = useState(null);
   const [validMoves, setValidMoves] = useState([]);
   const [capturedWhite, setCapturedWhite] = useState([]);
   const [capturedBlack, setCapturedBlack] = useState([]);
-  const [gameStatus, setGameStatus] = useState({status: 'playing'});
-  const [isMachineThinking, setIsMachineThinking] = useState(false);
+  const [gameStatus, setGameStatus] = useState({status: 'playing', currentTurn: 'white'});
   const [movingPiece, setMovingPiece] = useState(null);
   const [showGameOverModal, setShowGameOverModal] = useState(false);
-  const [showPromotionModal, setShowPromotionModal] = useState(false);
   const [pendingPromotion, setPendingPromotion] = useState(null);
-  
-  const machineMoveTimeoutRef = useRef(null);
+
+  const timeoutsRef = useRef(new Set());
   const lastBackPressRef = useRef(null);
 
-  useEffect(() => {
-    const backHandler = BackHandler.addEventListener('hardwareBackPress', handleBackPress);
-    return () => backHandler.remove();
-  }, [gameMode]);
+  const gameOver = isGameOver(gameStatus.status);
+  const isMachineTurn = gameMode === 'PvM' && game.turn === 'black';
 
-  useEffect(() => {
-    if (gameMode === 'PvM' && currentTurn === 'black' && !isMachineThinking && (gameStatus.status === 'playing' || gameStatus.status === 'check')) {
-      setIsMachineThinking(true);
-      machineMoveTimeoutRef.current = setTimeout(() => {
-        makeMachineMove();
-      }, 1000);
-    }
-    
-    return () => {
-      if (machineMoveTimeoutRef.current) {
-        clearTimeout(machineMoveTimeoutRef.current);
-      }
-    };
-  }, [currentTurn, gameMode, gameStatus.status]);
+  const schedule = useCallback((fn, ms) => {
+    const id = setTimeout(() => {
+      timeoutsRef.current.delete(id);
+      fn();
+    }, ms);
+    timeoutsRef.current.add(id);
+    return id;
+  }, []);
+
+  const clearScheduled = useCallback(() => {
+    timeoutsRef.current.forEach(id => clearTimeout(id));
+    timeoutsRef.current.clear();
+  }, []);
+
+  useEffect(() => clearScheduled, [clearScheduled]);
 
   const handleBackPress = useCallback(() => {
-    if (gameMode === null) {
-      if (lastBackPressRef.current && Date.now() - lastBackPressRef.current < 1000) {
-        BackHandler.exitApp();
-        return true;
-      }
-      lastBackPressRef.current = Date.now();
-      if (Platform.OS === 'android') {
-        ToastAndroid.show('Press back again to exit', ToastAndroid.SHORT);
-      }
-      return true;
-    }
-    
     if (lastBackPressRef.current && Date.now() - lastBackPressRef.current < 1000) {
       BackHandler.exitApp();
       return true;
     }
     lastBackPressRef.current = Date.now();
-    
     if (Platform.OS === 'android') {
       ToastAndroid.show('Press back again to exit', ToastAndroid.SHORT);
     }
     return true;
-  }, [gameMode]);
+  }, []);
 
-  const makeMachineMove = useCallback(() => {
-    const move = getBestMove(board, 'black', 3);
-    
-    if (move) {
+  useEffect(() => {
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', handleBackPress);
+    return () => backHandler.remove();
+  }, [handleBackPress]);
+
+  const finishGame = useCallback(newStatus => {
+    setGameStatus(newStatus);
+    setSelectedSquare(null);
+    setValidMoves([]);
+    schedule(() => setShowGameOverModal(true), 500);
+  }, [schedule]);
+
+  // Single entry point for every move (human or machine).
+  const commitMove = useCallback((from, to, promotionType) => {
+    const result = makeMove(game, from, to, promotionType);
+    setMovingPiece(null);
+    if (!result) {
+      playErrorSound();
+      return;
+    }
+
+    const {state: nextGame, move} = result;
+    if (move.captured) {
+      if (getPieceColor(move.captured) === 'white') {
+        setCapturedWhite(prev => [...prev, move.captured]);
+      } else {
+        setCapturedBlack(prev => [...prev, move.captured]);
+      }
+      playKillSound();
+    }
+    playMoveSound();
+
+    setGame(nextGame);
+    const newStatus = getGameStatus(nextGame);
+    if (newStatus.status === 'check' || newStatus.status === 'checkmate') {
+      playErrorSound();
+    }
+    if (isGameOver(newStatus.status)) {
+      finishGame(newStatus);
+    } else {
+      setGameStatus(newStatus);
+    }
+  }, [game, finishGame]);
+
+  // Machine plays black in PvM.
+  useEffect(() => {
+    if (!isMachineTurn || gameOver) return;
+    const thinkId = setTimeout(() => {
+      const move = getBestMove(game, 3);
+      if (!move) return;
       setMovingPiece({
         fromRow: move.from.row,
         fromCol: move.from.col,
         toRow: move.to.row,
         toCol: move.to.col,
-        isCapture: board[move.to.row][move.to.col] !== '',
+        isCapture: !!move.captured,
       });
-      
-      setTimeout(() => {
-        const {newBoard, capturedPiece, isPromotion} = movePiece(
-          board,
-          move.from.row,
-          move.from.col,
-          move.to.row,
-          move.to.col,
-        );
-
-        if (isPromotion) {
-          const promotedBoard = applyPromotion(newBoard, move.to.row, move.to.col, '♛');
-          
-          if (capturedPiece) {
-            if (getPieceColor(capturedPiece) === 'white') {
-              setCapturedWhite(prev => [...prev, capturedPiece]);
-            } else {
-              setCapturedBlack(prev => [...prev, capturedPiece]);
-            }
-            playKillSound();
-          }
-
-          setBoard(promotedBoard);
-          playMoveSound();
-          setCurrentTurn('white');
-          const newStatus = getGameStatus(promotedBoard, 'white');
-          setGameStatus(newStatus);
-          if (newStatus.status === 'check' || newStatus.status === 'checkmate') {
-            playErrorSound();
-          }
-          if (newStatus.status === 'checkmate' || newStatus.status === 'stalemate') {
-            setTimeout(() => setShowGameOverModal(true), 500);
-          }
-
-          setTimeout(() => {
-            setMovingPiece(null);
-          }, 100);
-          setIsMachineThinking(false);
-          return;
-        }
-
-        if (capturedPiece) {
-          if (getPieceColor(capturedPiece) === 'white') {
-            setCapturedWhite(prev => [...prev, capturedPiece]);
-          } else {
-            setCapturedBlack(prev => [...prev, capturedPiece]);
-          }
-          playKillSound();
-        }
-
-        setBoard(newBoard);
-        playMoveSound();
-        setCurrentTurn('white');
-        const newStatus = getGameStatus(newBoard, 'white');
-        setGameStatus(newStatus);
-        if (newStatus.status === 'check' || newStatus.status === 'checkmate') {
-          playErrorSound();
-        }
-        if (newStatus.status === 'checkmate' || newStatus.status === 'stalemate') {
-          setTimeout(() => setShowGameOverModal(true), 500);
-        }
-        
-        setTimeout(() => {
-          setMovingPiece(null);
-          setIsMachineThinking(false);
-        }, 100);
-      }, 200);
-    } else {
-      setIsMachineThinking(false);
-    }
-  }, [board]);
+      schedule(
+        () => commitMove(move.from, move.to, move.promotion ? getPieceType(move.promotion) : undefined),
+        MOVE_ANIMATION_MS,
+      );
+    }, MACHINE_DELAY_MS);
+    return () => clearTimeout(thinkId);
+  }, [isMachineTurn, gameOver, game, commitMove, schedule]);
 
   const resetGame = useCallback(() => {
-    setBoard(INITIAL_BOARD.map(row => [...row]));
-    setCurrentTurn('white');
+    clearScheduled();
+    setGame(createInitialState());
     setSelectedSquare(null);
     setValidMoves([]);
     setCapturedWhite([]);
     setCapturedBlack([]);
-    setGameStatus({status: 'playing'});
-    setIsMachineThinking(false);
+    setGameStatus({status: 'playing', currentTurn: 'white'});
     setMovingPiece(null);
     setShowGameOverModal(false);
-    setShowPromotionModal(false);
+    setPendingPromotion(null);
+  }, [clearScheduled]);
+
+  const handlePromotionSelect = useCallback(promotionType => {
+    if (!pendingPromotion) return;
+    setPendingPromotion(null);
+    commitMove(pendingPromotion.from, pendingPromotion.to, promotionType);
+  }, [pendingPromotion, commitMove]);
+
+  const handlePromotionCancel = useCallback(() => {
     setPendingPromotion(null);
   }, []);
 
-  const handlePromotionComplete = useCallback((promotedBoard, capturedPiece) => {
-    if (capturedPiece) {
-      if (getPieceColor(capturedPiece) === 'white') {
-        setCapturedWhite(prev => [...prev, capturedPiece]);
-      } else {
-        setCapturedBlack(prev => [...prev, capturedPiece]);
-      }
-      playKillSound();
-    }
-
-    setBoard(promotedBoard);
-    playMoveSound();
-    const nextTurn = currentTurn === 'white' ? 'black' : 'white';
-    setCurrentTurn(nextTurn);
-    const newStatus = getGameStatus(promotedBoard, nextTurn);
-    setGameStatus(newStatus);
-    if (newStatus.status === 'check' || newStatus.status === 'checkmate') {
-      playErrorSound();
-    }
-    if (newStatus.status === 'checkmate' || newStatus.status === 'stalemate') {
-      setTimeout(() => setShowGameOverModal(true), 500);
-    }
-
-    setTimeout(() => {
-      setMovingPiece(null);
-    }, 100);
-  }, [currentTurn]);
-
-  const handlePromotionSelect = useCallback((selectedPiece) => {
-    if (!pendingPromotion) return;
-
-    const promotedBoard = applyPromotion(
-      board,
-      pendingPromotion.toRow,
-      pendingPromotion.toCol,
-      selectedPiece
-    );
-
-    setShowPromotionModal(false);
-    handlePromotionComplete(promotedBoard, pendingPromotion.capturedPiece);
-  }, [pendingPromotion, board, handlePromotionComplete]);
-
-  const handleSelectMode = useCallback((mode) => {
+  const handleSelectMode = useCallback(mode => {
     setGameMode(mode);
     resetGame();
   }, [resetGame]);
@@ -259,121 +194,111 @@ const ChessGame = () => {
     resetGame();
   }, [resetGame]);
 
+  const handleResign = useCallback(() => {
+    if (gameOver) return;
+    const resigning = gameMode === 'PvM' ? 'white' : game.turn;
+    const label = gameMode === 'PvM' ? 'Do you' : `${capitalize(resigning)}, do you`;
+    Alert.alert('Resign', `${label} really want to resign?`, [
+      {text: 'Cancel', style: 'cancel'},
+      {
+        text: 'Resign',
+        style: 'destructive',
+        onPress: () => {
+          clearScheduled();
+          setMovingPiece(null);
+          setPendingPromotion(null);
+          finishGame({
+            status: 'resigned',
+            winner: opponentOf(resigning),
+            loser: resigning,
+            currentTurn: game.turn,
+          });
+        },
+      },
+    ]);
+  }, [gameOver, gameMode, game, clearScheduled, finishGame]);
+
+  const handleOfferDraw = useCallback(() => {
+    if (gameOver || isMachineTurn || movingPiece) return;
+    const drawStatus = {status: 'draw', reason: 'agreement', currentTurn: game.turn};
+
+    if (gameMode === 'PvM') {
+      if (shouldAcceptDraw(game, 'black')) {
+        Alert.alert('Draw offer', 'The machine accepts your draw offer.');
+        finishGame(drawStatus);
+      } else {
+        Alert.alert('Draw offer', 'The machine declines your draw offer.');
+      }
+      return;
+    }
+
+    const offering = game.turn;
+    const responding = opponentOf(offering);
+    Alert.alert(
+      'Draw offer',
+      `${capitalize(offering)} offers a draw. ${capitalize(responding)}, do you accept?`,
+      [
+        {text: 'Decline', style: 'cancel'},
+        {text: 'Accept', onPress: () => finishGame(drawStatus)},
+      ],
+    );
+  }, [gameOver, isMachineTurn, movingPiece, gameMode, game, finishGame]);
+
   const handleSquarePress = useCallback(
     (row, col) => {
-      if (gameMode === 'PvM' && currentTurn === 'black') return;
-      if (isMachineThinking) return;
-      if (gameStatus.status === 'checkmate' || gameStatus.status === 'stalemate') return;
+      if (isMachineTurn || gameOver || movingPiece || pendingPromotion) return;
 
-      const piece = board[row][col];
-      const pieceColor = getPieceColor(piece);
+      const piece = game.board[row][col];
 
       if (selectedSquare) {
-        const isValidMove = validMoves.some(
-          m => m.row === row && m.col === col,
-        );
+        const matching = validMoves.filter(m => m.to.row === row && m.to.col === col);
 
-        if (isValidMove) {
-          const isCapture = board[row][col] !== '';
-          
-          setMovingPiece({
-            fromRow: selectedSquare.row,
-            fromCol: selectedSquare.col,
-            toRow: row,
-            toCol: col,
-            isCapture,
-          });
-
-          setTimeout(() => {
-            const {newBoard, capturedPiece, isPromotion} = movePiece(
-              board,
-              selectedSquare.row,
-              selectedSquare.col,
-              row,
-              col,
-            );
-
-            if (isPromotion) {
-              setMovingPiece({
-                fromRow: selectedSquare.row,
-                fromCol: selectedSquare.col,
-                toRow: row,
-                toCol: col,
-                isCapture: isCapture,
-              });
-
-              setTimeout(() => {
-                setBoard(newBoard);
-                setMovingPiece(null);
-                
-                setPendingPromotion({
-                  fromRow: selectedSquare.row,
-                  fromCol: selectedSquare.col,
-                  toRow: row,
-                  toCol: col,
-                  color: currentTurn,
-                  isCapture,
-                  capturedPiece,
-                });
-                setSelectedSquare(null);
-                setValidMoves([]);
-                
-                if (gameMode === 'PvM') {
-                  const promotedBoard = applyPromotion(newBoard, row, col, currentTurn === 'white' ? '♕' : '♛');
-                  handlePromotionComplete(promotedBoard, capturedPiece);
-                } else {
-                  setShowPromotionModal(true);
-                }
-              }, 200);
-              return;
-            }
-
-            if (capturedPiece) {
-              if (getPieceColor(capturedPiece) === 'white') {
-                setCapturedWhite(prev => [...prev, capturedPiece]);
-              } else {
-                setCapturedBlack(prev => [...prev, capturedPiece]);
-              }
-              playKillSound();
-            }
-
-            setBoard(newBoard);
-            playMoveSound();
-            const nextTurn = currentTurn === 'white' ? 'black' : 'white';
-            setCurrentTurn(nextTurn);
-            const newStatus = getGameStatus(newBoard, nextTurn);
-            setGameStatus(newStatus);
-            if (newStatus.status === 'check' || newStatus.status === 'checkmate') {
-              playErrorSound();
-            }
-            if (newStatus.status === 'checkmate' || newStatus.status === 'stalemate') {
-              setTimeout(() => setShowGameOverModal(true), 500);
-            }
-
-            setTimeout(() => {
-              setMovingPiece(null);
-            }, 100);
-          }, 200);
-
+        if (matching.length > 0) {
+          const move = matching[0];
+          const from = {...selectedSquare};
+          const to = {row, col};
           setSelectedSquare(null);
           setValidMoves([]);
+          setMovingPiece({
+            fromRow: from.row,
+            fromCol: from.col,
+            toRow: row,
+            toCol: col,
+            isCapture: !!move.captured,
+          });
+
+          schedule(() => {
+            if (move.promotion) {
+              setMovingPiece(null);
+              setPendingPromotion({
+                from,
+                to,
+                color: game.turn,
+                previewBoard: applyMoveToBoard(game.board, {...move, promotion: null}),
+              });
+            } else {
+              commitMove(from, to);
+            }
+          }, MOVE_ANIMATION_MS);
           return;
-        } else if (selectedSquare && (selectedSquare.row !== row || selectedSquare.col !== col) && !piece) {
+        }
+
+        if ((selectedSquare.row !== row || selectedSquare.col !== col) && !piece) {
           playErrorSound();
           return;
         }
       }
 
-      if (piece && pieceColor === currentTurn) {
+      if (piece && getPieceColor(piece) === game.turn) {
         playSelectSound();
         setSelectedSquare({row, col});
-        setValidMoves(getValidMoves(board, row, col));
+        setValidMoves(getValidMoves(game, row, col));
       } else {
         setSelectedSquare(null);
         setValidMoves([]);
       }
     },
-    [board, selectedSquare, validMoves, currentTurn, gameMode, isMachineThinking, gameStatus.status],
+    [game, selectedSquare, validMoves, isMachineTurn, gameOver, movingPiece, pendingPromotion, schedule, commitMove],
   );
 
   if (!gameMode) {
@@ -392,9 +317,9 @@ const ChessGame = () => {
         <View style={styles.content}>
           <View style={styles.boardSection}>
             <ChessBoard
-              board={board}
+              board={pendingPromotion ? pendingPromotion.previewBoard : game.board}
               selectedSquare={selectedSquare}
-              validMoves={validMoves}
+              validMoves={validMoves.map(m => m.to)}
               onSquarePress={handleSquarePress}
               movingPiece={movingPiece}
               gameStatus={gameStatus}
@@ -403,17 +328,20 @@ const ChessGame = () => {
 
           <View style={styles.infoSection}>
             <ScoreBoard
-              currentTurn={currentTurn}
+              currentTurn={game.turn}
               gameMode={gameMode}
               capturedWhite={capturedWhite}
               capturedBlack={capturedBlack}
               gameStatus={gameStatus}
             />
-            
+
             <GameControls
               gameStatus={gameStatus}
               onReset={resetGame}
               onBack={handleBackToMenu}
+              onResign={handleResign}
+              onOfferDraw={handleOfferDraw}
+              canOfferDraw={!isMachineTurn}
             />
           </View>
         </View>
@@ -431,9 +359,10 @@ const ChessGame = () => {
       />
 
       <PromotionModal
-        visible={showPromotionModal}
+        visible={!!pendingPromotion}
         color={pendingPromotion?.color}
         onSelect={handlePromotionSelect}
+        onCancel={handlePromotionCancel}
       />
     </SafeAreaView>
   );

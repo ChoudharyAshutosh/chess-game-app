@@ -1,5 +1,6 @@
 import React from 'react';
 import {View, Text, StyleSheet} from 'react-native';
+import {isGameOver as isFinished, DRAW_REASON_TEXT} from '../utils/chessUtils';
 
 const GameInfo = ({
   currentTurn,
@@ -14,12 +15,16 @@ const GameInfo = ({
         return `Checkmate! ${gameStatus.winner === 'white' ? 'White' : 'Black'} wins!`;
       case 'stalemate':
         return 'Stalemate! Game is a draw.';
+      case 'draw':
+        return `Draw: ${DRAW_REASON_TEXT[gameStatus.reason] || ''}`;
+      case 'resigned':
+        return `${gameStatus.winner === 'white' ? 'White' : 'Black'} wins by resignation!`;
       default:
         return '';
     }
   };
 
-  const isGameOver = gameStatus.status === 'checkmate' || gameStatus.status === 'stalemate';
+  const isGameOver = isFinished(gameStatus.status);
 
   return (
     <View style={styles.container}>

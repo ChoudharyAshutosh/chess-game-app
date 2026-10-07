@@ -12,20 +12,20 @@ const {width: screenWidth} = Dimensions.get('window');
 
 const PROMOTION_PIECES = {
   white: [
-    {piece: '♕', name: 'Queen', value: '♕'},
-    {piece: '♖', name: 'Rook', value: '♖'},
-    {piece: '♗', name: 'Bishop', value: '♗'},
-    {piece: '♘', name: 'Knight', value: '♘'},
+    {piece: '♕', name: 'Queen', value: 'queen'},
+    {piece: '♖', name: 'Rook', value: 'rook'},
+    {piece: '♗', name: 'Bishop', value: 'bishop'},
+    {piece: '♘', name: 'Knight', value: 'knight'},
   ],
   black: [
-    {piece: '♛', name: 'Queen', value: '♛'},
-    {piece: '♜', name: 'Rook', value: '♜'},
-    {piece: '♝', name: 'Bishop', value: '♝'},
-    {piece: '♞', name: 'Knight', value: '♞'},
+    {piece: '♛', name: 'Queen', value: 'queen'},
+    {piece: '♜', name: 'Rook', value: 'rook'},
+    {piece: '♝', name: 'Bishop', value: 'bishop'},
+    {piece: '♞', name: 'Knight', value: 'knight'},
   ],
 };
 
-const PromotionModal = ({visible, color, onSelect}) => {
+const PromotionModal = ({visible, color, onSelect, onCancel}) => {
   if (!visible || !color) return null;
 
   const pieces = PROMOTION_PIECES[color];
@@ -35,7 +35,7 @@ const PromotionModal = ({visible, color, onSelect}) => {
       visible={visible}
       transparent
       animationType="fade"
-      onRequestClose={() => {}}>
+      onRequestClose={onCancel}>
       <View style={styles.overlay}>
         <View style={styles.container}>
           <Text style={styles.title}>Promote Pawn</Text>
@@ -52,6 +52,10 @@ const PromotionModal = ({visible, color, onSelect}) => {
               </TouchableOpacity>
             ))}
           </View>
+
+          <TouchableOpacity style={styles.cancelButton} onPress={onCancel}>
+            <Text style={styles.cancelText}>Cancel</Text>
+          </TouchableOpacity>
         </View>
       </View>
     </Modal>
@@ -108,6 +112,15 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: 'rgba(255, 255, 255, 0.7)',
     marginTop: 4,
+  },
+  cancelButton: {
+    marginTop: 20,
+    paddingVertical: 8,
+    paddingHorizontal: 24,
+  },
+  cancelText: {
+    color: 'rgba(255, 255, 255, 0.6)',
+    fontSize: 14,
   },
 });
 
