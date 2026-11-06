@@ -1,28 +1,18 @@
 import React from 'react';
 import {View, Text, StyleSheet} from 'react-native';
+import ThinkingIndicator from './ThinkingIndicator';
+
+const LEVEL_NAMES = {easy: 'Easy', medium: 'Medium', hard: 'Hard'};
 
 const ScoreBoard = ({
   currentTurn,
   gameMode,
+  machineLevel,
   capturedWhite,
   capturedBlack,
   gameStatus,
+  isThinking,
 }) => {
-  const PIECE_VALUES = {
-    '♙': 1, '♟': 1,
-    '♘': 3, '♞': 3,
-    '♗': 3, '♝': 3,
-    '♖': 5, '♜': 5,
-    '♕': 9, '♛': 9,
-  };
-
-  const getScore = (captured) => {
-    return captured.reduce((sum, piece) => sum + (PIECE_VALUES[piece] || 0), 0);
-  };
-
-  const whiteScore = getScore(capturedBlack);
-  const blackScore = getScore(capturedWhite);
-
   const getStatusText = () => {
     if (gameStatus.status === 'check') {
       return 'CHECK';
@@ -61,8 +51,8 @@ const ScoreBoard = ({
           </View>
         </View>
         <View style={styles.scoreContainer}>
-          <Text style={styles.scoreLabel}>Score</Text>
-          <Text style={styles.score}>{whiteScore}</Text>
+          <Text style={styles.scoreLabel}>Taken</Text>
+          <Text style={styles.score}>{capturedBlack.length}</Text>
         </View>
       </View>
 
@@ -74,19 +64,23 @@ const ScoreBoard = ({
             </Text>
           </View>
         ) : null}
-        <Text style={styles.turnText}>
-          {gameMode === 'PvM' 
-            ? (currentTurn === 'white' ? "Your Turn" : "Machine")
-            : (currentTurn === 'white' ? "White's Turn" : "Black's Turn")
-          }
-        </Text>
+        {isThinking ? (
+          <ThinkingIndicator />
+        ) : (
+          <Text style={styles.turnText}>
+            {gameMode === 'PvM'
+              ? (currentTurn === 'white' ? "Your Turn" : "Machine")
+              : (currentTurn === 'white' ? "White's Turn" : "Black's Turn")
+            }
+          </Text>
+        )}
       </View>
 
       <View style={[styles.playerCard, styles.playerCardRight]}>
         <View style={[styles.indicator, currentTurn === 'black' && styles.activeIndicator]} />
         <View style={styles.playerInfo}>
           <Text style={styles.playerLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
-            {gameMode === 'PvM' ? 'Machine' : 'Black'}
+            {gameMode === 'PvM' ? `Machine (${LEVEL_NAMES[machineLevel]})` : 'Black'}
           </Text>
           <View style={styles.piecesRow}>
             {capturedWhite.length > 0 ? (
@@ -99,8 +93,8 @@ const ScoreBoard = ({
           </View>
         </View>
         <View style={styles.scoreContainer}>
-          <Text style={styles.scoreLabel}>Score</Text>
-          <Text style={styles.score}>{blackScore}</Text>
+          <Text style={styles.scoreLabel}>Taken</Text>
+          <Text style={styles.score}>{capturedWhite.length}</Text>
         </View>
       </View>
     </View>

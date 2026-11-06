@@ -11,6 +11,10 @@ import {
   isPromotionMove,
   isGameOver,
   getBestMove,
+  searchBestMove,
+  searchMoveForLevel,
+  getMoveForLevel,
+  MACHINE_LEVELS,
   shouldAcceptDraw,
   algebraicToSquare as sq,
 } from '../src/utils/chessUtils';
@@ -344,5 +348,124 @@ describe('computer player', () => {
     expect(shouldAcceptDraw(blackLosing, 'black')).toBe(true);
     const blackWinning = fenToState('qq2k3/8/8/8/8/8/8/4K3 w - - 0 1');
     expect(shouldAcceptDraw(blackWinning, 'black')).toBe(false);
+  });
+});
+
+describe('searchBestMove', () => {
+  const POSITION = 'r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 3';
+
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => {
+    jest.useRealTimers();
+    jest.restoreAllMocks();
+  });
+
+  test('pauses between moves, then reports one legal move', () => {
+    let now = 0;
+    jest.spyOn(Date, 'now').mockImplementation(() => (now += 100));
+    const state = fenToState(POSITION);
+    const onDone = jest.fn();
+
+    searchBestMove(state, 1, onDone);
+    jest.advanceTimersByTime(0);
+    expect(onDone).not.toHaveBeenCalled();
+
+    jest.runAllTimers();
+    expect(onDone).toHaveBeenCalledTimes(1);
+    const move = onDone.mock.calls[0][0];
+    const legal = getValidMoves(state, move.from.row, move.from.col);
+    expect(legal.map(m => m.to)).toContainEqual(move.to);
+  });
+
+  test('takes a free queen, like getBestMove', () => {
+    const state = fenToState('4k3/8/8/3q4/4P3/8/8/4K3 w - - 0 1');
+    const onDone = jest.fn();
+    searchBestMove(state, 3, onDone);
+    jest.runAllTimers();
+    expect(onDone.mock.calls[0][0].to).toEqual(getBestMove(state, 3).to);
+  });
+
+  test('reports null when there are no legal moves', () => {
+    const onDone = jest.fn();
+    searchBestMove(fenToState('7k/5Q2/6K1/8/8/8/8/8 b - - 0 1'), 3, onDone);
+    jest.runAllTimers();
+    expect(onDone).toHaveBeenCalledWith(null);
+  });
+
+  test('cancelling stops the search', () => {
+    const onDone = jest.fn();
+    const cancel = searchBestMove(fenToState(POSITION), 1, onDone);
+    cancel();
+    jest.runAllTimers();
+    expect(onDone).not.toHaveBeenCalled();
+  });
+});
+
+describe('machine levels', () => {
+  // Black can take a free queen; a level that isn't making a mistake always does.
+  const FREE_QUEEN = '4k3/8/8/3p4/4Q3/8/8/4K3 b - - 0 1';
+
+  afterEach(() => jest.restoreAllMocks());
+
+  test('each level is deeper and makes fewer mistakes than the one below', () => {
+    const {easy, medium, hard} = MACHINE_LEVELS;
+    expect(easy.depth).toBeLessThan(medium.depth);
+    expect(medium.depth).toBeLessThan(hard.depth);
+    expect(easy.mistakeChance).toBeGreaterThan(medium.mistakeChance);
+    expect(medium.mistakeChance).toBeGreaterThan(hard.mistakeChance);
+  });
+
+  test('hard keeps the original strength and never makes a random move', () => {
+    expect(MACHINE_LEVELS.hard).toEqual({depth: 3, mistakeChance: 0});
+    jest.spyOn(Math, 'random').mockReturnValue(0);
+    expect(getMoveForLevel(fenToState(FREE_QUEEN), 'hard').to).toEqual(sq('e4'));
+  });
+
+  test.each(['easy', 'medium'])('%s takes the free queen when not making a mistake', level => {
+    jest.spyOn(Math, 'random').mockReturnValue(0.99);
+    expect(getMoveForLevel(fenToState(FREE_QUEEN), level).to).toEqual(sq('e4'));
+  });
+
+  test.each(['easy', 'medium'])('%s can make a mistake, which is still a legal move', level => {
+    jest.spyOn(Math, 'random').mockReturnValue(0);
+    const state = fenToState(FREE_QUEEN);
+    const move = getMoveForLevel(state, level);
+    expect(move.to).not.toEqual(sq('e4'));
+    expect(getValidMoves(state, move.from.row, move.from.col).map(m => m.to)).toContainEqual(move.to);
+  });
+
+  test.each(['easy', 'medium', 'hard'])('%s reports null when there are no legal moves', level => {
+    expect(getMoveForLevel(fenToState('7k/5Q2/6K1/8/8/8/8/8 b - - 0 1'), level)).toBeNull();
+  });
+
+  describe('searchMoveForLevel', () => {
+    beforeEach(() => jest.useFakeTimers());
+    afterEach(() => jest.useRealTimers());
+
+    test('reports a mistake asynchronously', () => {
+      jest.spyOn(Math, 'random').mockReturnValue(0);
+      const onDone = jest.fn();
+      searchMoveForLevel(fenToState(FREE_QUEEN), 'easy', onDone);
+      expect(onDone).not.toHaveBeenCalled();
+      jest.runAllTimers();
+      expect(onDone).toHaveBeenCalledTimes(1);
+      expect(onDone.mock.calls[0][0].to).not.toEqual(sq('e4'));
+    });
+
+    test('searches when not making a mistake', () => {
+      jest.spyOn(Math, 'random').mockReturnValue(0.99);
+      const onDone = jest.fn();
+      searchMoveForLevel(fenToState(FREE_QUEEN), 'easy', onDone);
+      jest.runAllTimers();
+      expect(onDone.mock.calls[0][0].to).toEqual(sq('e4'));
+    });
+
+    test.each([0, 0.99])('cancelling stops it (random %d)', random => {
+      jest.spyOn(Math, 'random').mockReturnValue(random);
+      const onDone = jest.fn();
+      searchMoveForLevel(fenToState(FREE_QUEEN), 'easy', onDone)();
+      jest.runAllTimers();
+      expect(onDone).not.toHaveBeenCalled();
+    });
   });
 });
