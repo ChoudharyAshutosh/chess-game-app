@@ -1001,6 +1001,37 @@ export const searchBestMove = (state, depth, onDone) => {
   };
 };
 
+// Search depth alone can't make the machine easy: its capture search rarely
+// gives pieces away even at depth 1. Lower levels also sometimes play a random
+// legal move, which leaves openings for the player to punish.
+export const MACHINE_LEVELS = {
+  easy: {depth: 1, mistakeChance: 0.4},
+  medium: {depth: 2, mistakeChance: 0.1},
+  hard: {depth: 3, mistakeChance: 0},
+};
+
+const pickMistake = (state, {mistakeChance}) => {
+  if (Math.random() >= mistakeChance) return null;
+  const moves = getAllLegalMoves(state);
+  return moves.length > 0
+    ? moves[Math.floor(Math.random() * moves.length)]
+    : null;
+};
+
+export const getMoveForLevel = (state, level) => {
+  const settings = MACHINE_LEVELS[level];
+  return pickMistake(state, settings) ?? getBestMove(state, settings.depth);
+};
+
+// getMoveForLevel for the app: never blocks, and returns a cancel function.
+export const searchMoveForLevel = (state, level, onDone) => {
+  const settings = MACHINE_LEVELS[level];
+  const mistake = pickMistake(state, settings);
+  if (!mistake) return searchBestMove(state, settings.depth, onDone);
+  const timer = setTimeout(() => onDone(mistake), 0);
+  return () => clearTimeout(timer);
+};
+
 // Search score for the side to move, in centipawns.
 export const evaluatePosition = (state, depth = 2) => {
   const scored = scoreRootMoves(state, depth);

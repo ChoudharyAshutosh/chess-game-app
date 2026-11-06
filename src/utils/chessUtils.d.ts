@@ -5,6 +5,7 @@ import type {
   Color,
   GameState,
   GameStatus,
+  MachineLevel,
   Move,
   Piece,
   PieceType,
@@ -27,6 +28,11 @@ export const getBestMove: (state: GameState, depth?: number) => Move | null;
 export const searchBestMove: (
   state: GameState,
   depth: number,
+  onDone: (move: Move | null) => void,
+) => () => void;
+export const searchMoveForLevel: (
+  state: GameState,
+  level: MachineLevel,
   onDone: (move: Move | null) => void,
 ) => () => void;
 export const isGameOver: (status: GameStatus['status']) => boolean;

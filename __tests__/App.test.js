@@ -42,7 +42,7 @@ const start = async mode => {
     renderer = ReactTestRenderer.create(<App />);
   });
   act(() => {
-    renderer.root.findByType(GameModeSelection).props.onSelectMode(mode);
+    renderer.root.findByType(GameModeSelection).props.onSelectMode(mode, 'hard');
   });
 };
 
@@ -340,6 +340,34 @@ describe('player vs machine', () => {
     act(() => controls().onResign());
     pressNotice('Resign');
     expect(renderer.root.findAllByType(ThinkingIndicator)).toHaveLength(0);
+  });
+
+  test('the machine plays at the chosen level', async () => {
+    await act(async () => {
+      renderer = ReactTestRenderer.create(<App />);
+    });
+    act(() => {
+      renderer.root.findByType(GameModeSelection).props.onSelectMode('PvM', 'easy');
+    });
+    const search = jest.spyOn(chessUtils, 'searchMoveForLevel');
+    move('e2e4');
+    act(() => {
+      jest.advanceTimersByTime(1000);
+    });
+    expect(search).toHaveBeenCalledTimes(1);
+    expect(search.mock.calls[0][1]).toBe('easy');
+    expect(scoreBoard().machineLevel).toBe('easy');
+  });
+
+  test('restart keeps the chosen level', async () => {
+    await act(async () => {
+      renderer = ReactTestRenderer.create(<App />);
+    });
+    act(() => {
+      renderer.root.findByType(GameModeSelection).props.onSelectMode('PvM', 'easy');
+    });
+    act(() => controls().onReset());
+    expect(scoreBoard().machineLevel).toBe('easy');
   });
 
   test('machine replies with a legal move', async () => {

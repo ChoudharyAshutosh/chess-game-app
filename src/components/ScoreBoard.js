@@ -2,9 +2,12 @@ import React from 'react';
 import {View, Text, StyleSheet} from 'react-native';
 import ThinkingIndicator from './ThinkingIndicator';
 
+const LEVEL_NAMES = {easy: 'Easy', medium: 'Medium', hard: 'Hard'};
+
 const ScoreBoard = ({
   currentTurn,
   gameMode,
+  machineLevel,
   capturedWhite,
   capturedBlack,
   gameStatus,
@@ -77,7 +80,7 @@ const ScoreBoard = ({
         <View style={[styles.indicator, currentTurn === 'black' && styles.activeIndicator]} />
         <View style={styles.playerInfo}>
           <Text style={styles.playerLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
-            {gameMode === 'PvM' ? 'Machine' : 'Black'}
+            {gameMode === 'PvM' ? `Machine (${LEVEL_NAMES[machineLevel]})` : 'Black'}
           </Text>
           <View style={styles.piecesRow}>
             {capturedWhite.length > 0 ? (

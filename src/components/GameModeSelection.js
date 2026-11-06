@@ -1,4 +1,4 @@
-import React, {useEffect, useRef} from 'react';
+import React, {useEffect, useRef, useState} from 'react';
 import {
   View,
   Text,
@@ -6,8 +6,10 @@ import {
   StyleSheet,
   Dimensions,
   Animated,
+  BackHandler,
 } from 'react-native';
 import {MaterialDesignIcons} from '@react-native-vector-icons/material-design-icons/static';
+import MachineLevelSelection from './MachineLevelSelection';
 
 const {width: screenWidth, height: screenHeight} = Dimensions.get('window');
 
@@ -18,6 +20,17 @@ const GameModeSelection = ({onSelectMode}) => {
   const scaleAnim = useRef(new Animated.Value(0.9)).current;
   const button1Anim = useRef(new Animated.Value(0)).current;
   const button2Anim = useRef(new Animated.Value(0)).current;
+  const [choosingLevel, setChoosingLevel] = useState(false);
+
+  // Registered after the app's own back handler, so it runs first.
+  useEffect(() => {
+    if (!choosingLevel) return;
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      setChoosingLevel(false);
+      return true;
+    });
+    return () => subscription.remove();
+  }, [choosingLevel]);
 
   useEffect(() => {
     Animated.parallel([
@@ -45,7 +58,7 @@ const GameModeSelection = ({onSelectMode}) => {
         useNativeDriver: true,
       }),
     ]).start();
-  }, []);
+  }, [fadeAnim, scaleAnim, button1Anim, button2Anim]);
 
   const handlePressIn = (anim) => {
     Animated.timing(anim, {
@@ -99,9 +112,19 @@ const GameModeSelection = ({onSelectMode}) => {
         </View>
         
         <Text style={styles.title}>Chess</Text>
-        <Text style={styles.subtitle}>Master the Board</Text>
+        <Text style={styles.subtitle}>
+          {choosingLevel ? 'Choose a level' : 'Master the Board'}
+        </Text>
 
-        <View style={styles.buttonContainer}>
+        {choosingLevel && (
+          <MachineLevelSelection
+            onSelect={level => onSelectMode('PvM', level)}
+            onBack={() => setChoosingLevel(false)}
+          />
+        )}
+
+        {/* Hidden, not removed: removing a button mid-press would freeze its animation. */}
+        <View style={[styles.buttonContainer, choosingLevel && styles.hidden]}>
           <AnimatedTouchable
             style={[
               styles.modeButton,
@@ -147,7 +170,7 @@ const GameModeSelection = ({onSelectMode}) => {
                 transform: [{scale: button2Anim}],
               }
             ]}
-            onPress={() => onSelectMode('PvM')}
+            onPress={() => setChoosingLevel(true)}
             onPressIn={() => handlePressIn(button2Anim)}
             onPressOut={() => handlePressOut(button2Anim)}
             activeOpacity={0.9}>
@@ -174,7 +197,9 @@ const GameModeSelection = ({onSelectMode}) => {
         </View>
 
         <View style={styles.footer}>
-          <Text style={styles.footerText}>Tap a mode to start</Text>
+          <Text style={styles.footerText}>
+            {choosingLevel ? 'Tap a level to start' : 'Tap a mode to start'}
+          </Text>
         </View>
       </Animated.View>
     </View>
@@ -239,6 +264,9 @@ const styles = StyleSheet.create({
   buttonContainer: {
     width: '100%',
     gap: 16,
+  },
+  hidden: {
+    display: 'none',
   },
   modeButton: {
     borderRadius: 24,

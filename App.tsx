@@ -25,7 +25,7 @@ import {
   getGameStatus,
   getPieceColor,
   getPieceType,
-  searchBestMove,
+  searchMoveForLevel,
   isGameOver,
   opponentOf,
   shouldAcceptDraw,
@@ -39,6 +39,7 @@ import type {
   GameMode,
   GameState,
   GameStatus,
+  MachineLevel,
   Move,
   Piece,
   PieceType,
@@ -113,6 +114,7 @@ const App = () => {
 
 const ChessGame = () => {
   const [gameMode, setGameMode] = useState<GameMode | null>(null);
+  const [machineLevel, setMachineLevel] = useState<MachineLevel>('medium');
   const [game, setGame] = useState<GameState>(createInitialState);
   const [selectedSquare, setSelectedSquare] = useState<SquarePosition | null>(null);
   const [validMoves, setValidMoves] = useState<Move[]>([]);
@@ -221,7 +223,7 @@ const ChessGame = () => {
     if (!isMachineTurn || gameOver || isNoticeOpen) return;
     let cancelSearch: (() => void) | undefined;
     const thinkId = setTimeout(() => {
-      cancelSearch = searchBestMove(game, 3, move => {
+      cancelSearch = searchMoveForLevel(game, machineLevel, move => {
         if (!move) return;
         setMovingPiece({
           fromRow: move.from.row,
@@ -240,7 +242,7 @@ const ChessGame = () => {
       clearTimeout(thinkId);
       cancelSearch?.();
     };
-  }, [isMachineTurn, gameOver, isNoticeOpen, game, commitMove, schedule]);
+  }, [isMachineTurn, gameOver, isNoticeOpen, game, machineLevel, commitMove, schedule]);
 
   const resetGame = useCallback(() => {
     clearScheduled();
@@ -266,8 +268,9 @@ const ChessGame = () => {
     setPendingPromotion(null);
   }, []);
 
-  const handleSelectMode = useCallback((mode: GameMode) => {
+  const handleSelectMode = useCallback((mode: GameMode, level: MachineLevel = 'medium') => {
     setGameMode(mode);
+    setMachineLevel(level);
     resetGame();
   }, [resetGame]);
 
@@ -453,6 +456,7 @@ const ChessGame = () => {
             <ScoreBoard
               currentTurn={game.turn}
               gameMode={gameMode}
+              machineLevel={machineLevel}
               capturedWhite={capturedWhite}
               capturedBlack={capturedBlack}
               gameStatus={gameStatus}

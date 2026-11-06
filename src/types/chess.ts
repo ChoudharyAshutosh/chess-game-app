@@ -1,6 +1,7 @@
 export type Color = 'white' | 'black';
 export type PieceType = 'pawn' | 'knight' | 'bishop' | 'rook' | 'queen' | 'king';
 export type GameMode = 'PvP' | 'PvM';
+export type MachineLevel = 'easy' | 'medium' | 'hard';
 
 // A piece symbol such as '♙', or '' for an empty square.
 export type Piece = string;
