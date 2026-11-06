@@ -13,6 +13,9 @@ PODS:
     - ReactNativeDependencies
   - glog (0.3.5):
     - ReactNativeDependencies
+  - Google-Mobile-Ads-SDK (13.10.0):
+    - GoogleUserMessagingPlatform (>= 1.1)
+  - GoogleUserMessagingPlatform (3.1.0)
   - hermes-engine (260318099.0.2):
     - hermes-engine/Pre-built (= 260318099.0.2)
   - hermes-engine/Pre-built (260318099.0.2)
@@ -1351,6 +1354,29 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
+  - react-native-netinfo (12.0.1):
+    - hermes-engine
+    - RCTRequired
+    - RCTTypeSafety
+    - React-bridging
+    - React-Core
+    - React-Core-prebuilt
+    - React-cxxstableapi
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/core
+    - ReactNativeDependencies
+    - Yoga
   - react-native-safe-area-context (5.9.1):
     - hermes-engine
     - RCTRequired
@@ -1817,6 +1843,31 @@ PODS:
     - React-utils (= 0.88.0-rc.0)
     - ReactNativeDependencies
   - ReactNativeDependencies (0.88.0-rc.0)
+  - RNGoogleMobileAds (17.4.0):
+    - Google-Mobile-Ads-SDK (= 13.10.0)
+    - GoogleUserMessagingPlatform (= 3.1.0)
+    - hermes-engine
+    - RCTRequired
+    - RCTTypeSafety
+    - React-bridging
+    - React-Core
+    - React-Core-prebuilt
+    - React-cxxstableapi
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/core
+    - ReactNativeDependencies
+    - Yoga
   - RNReactNativeHapticFeedback (3.0.0):
     - hermes-engine
     - RCTRequired
@@ -1918,6 +1969,7 @@ DEPENDENCIES:
   - React-Mapbuffer (from `../node_modules/react-native/ReactCommon`)
   - React-microtasksnativemodule (from `../node_modules/react-native/ReactCommon/react/nativemodule/microtasks`)
   - React-mutationobservernativemodule (from `../node_modules/react-native/ReactCommon/react/nativemodule/mutationobserver`)
+  - "react-native-netinfo (from `../node_modules/@react-native-community/netinfo`)"
   - react-native-safe-area-context (from `../node_modules/react-native-safe-area-context`)
   - "react-native-vector-icons-material-design-icons (from `../node_modules/@react-native-vector-icons/material-design-icons`)"
   - "react-native-vector-icons-material-icons (from `../node_modules/@react-native-vector-icons/material-icons`)"
@@ -1958,10 +2010,16 @@ DEPENDENCIES:
   - ReactCodegen (from `build/generated/ios/ReactCodegen`)
   - ReactCommon/turbomodule/core (from `../node_modules/react-native/ReactCommon`)
   - ReactNativeDependencies (from `../node_modules/react-native/third-party-podspecs/ReactNativeDependencies.podspec`)
+  - RNGoogleMobileAds (from `../node_modules/react-native-google-mobile-ads`)
   - RNReactNativeHapticFeedback (from `../node_modules/react-native-haptic-feedback`)
   - RNSound (from `../node_modules/react-native-sound`)
   - SocketRocket (from `build/rndeps-facades/SocketRocket`)
   - Yoga (from `build/rncore-facades/Yoga`)
+
+SPEC REPOS:
+  trunk:
+    - Google-Mobile-Ads-SDK
+    - GoogleUserMessagingPlatform
 
 EXTERNAL SOURCES:
   boost:
@@ -2061,6 +2119,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native/ReactCommon/react/nativemodule/microtasks"
   React-mutationobservernativemodule:
     :path: "../node_modules/react-native/ReactCommon/react/nativemodule/mutationobserver"
+  react-native-netinfo:
+    :path: "../node_modules/@react-native-community/netinfo"
   react-native-safe-area-context:
     :path: "../node_modules/react-native-safe-area-context"
   react-native-vector-icons-material-design-icons:
@@ -2141,6 +2201,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native/ReactCommon"
   ReactNativeDependencies:
     :podspec: "../node_modules/react-native/third-party-podspecs/ReactNativeDependencies.podspec"
+  RNGoogleMobileAds:
+    :path: "../node_modules/react-native-google-mobile-ads"
   RNReactNativeHapticFeedback:
     :path: "../node_modules/react-native-haptic-feedback"
   RNSound:
@@ -2158,6 +2220,8 @@ SPEC CHECKSUMS:
   FBLazyVector: 6ae3aac3b321534cbd459530126a9c4830b8b42c
   fmt: c7776a2a4b1d7ce88b809a1e4d1f7add0f2369df
   glog: b4427c3119645da795ff09985ba9da909c940c96
+  Google-Mobile-Ads-SDK: 8e764c4990ef82c2727fd32e0c4143817b443603
+  GoogleUserMessagingPlatform: befe603da6501006420c206222acd449bba45a9c
   hermes-engine: 448dddb9d873f5a8654eb79775732faf099e2899
   RCT-Folly: d173e541eeb78cad5c81011c1bbf62d5b86b9778
   RCTDeprecation: 7e4e1793859a607af24548c5918786ec5e4c4d7c
@@ -2199,6 +2263,7 @@ SPEC CHECKSUMS:
   React-Mapbuffer: 5175ee733a8e9f7cd92b7547da080652f63d8b81
   React-microtasksnativemodule: 1eac8d442da7794838f8a9663ca9fef009df8a3f
   React-mutationobservernativemodule: 8f24dc39073ddf7be3412a7dd9b18665974d5f6d
+  react-native-netinfo: 94ab508cdb426680c1a4fb202706eab70625e4c0
   react-native-safe-area-context: 38b67ca88e979638b4148b57ffb34246da0de2fa
   react-native-vector-icons-material-design-icons: 9e98e87947156bfe95135fb523b62821486044e3
   react-native-vector-icons-material-icons: 6d1d8ea28261609bbb975b1e9c51fe54eedfafe6
@@ -2239,6 +2304,7 @@ SPEC CHECKSUMS:
   ReactCodegen: 9dc897aa59d5f06256acb9537af664e6298cc32f
   ReactCommon: 7661276fdffd1d2729a0f0cbf756f2edbcb3ed6b
   ReactNativeDependencies: 123563aa152b18f2c5d7e6bee5f68b0f8d7b4d44
+  RNGoogleMobileAds: 7f2f9134c58ab63d83fc9777698b27106abf946a
   RNReactNativeHapticFeedback: 346a4a760619468969f0e4ce5d0c87cf6674875d
   RNSound: c2d975a8c929a92f32853f2c9981176e06a7e0c7
   SocketRocket: d57b1af80c029e12a75cd9b218287c67381e4593

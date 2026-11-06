@@ -6,3 +6,4 @@ export {default as ScoreBoard} from './ScoreBoard';
 export {default as GameControls} from './GameControls';
 export {default as GameOverModal} from './GameOverModal';
 export {default as PromotionModal} from './PromotionModal';
+export {default as NoticeModal} from './NoticeModal';
