@@ -1,6 +1,11 @@
 /* eslint-env jest */
 
 // Native modules that cannot run under Node.
+jest.mock('./src/lib/ads', () => ({
+  initAds: () => () => {},
+  showRewardedAd: jest.fn(),
+}));
+
 jest.mock('react-native-sound', () => {
   function Sound(_file, _bundle, callback) {
     if (callback) callback(null);

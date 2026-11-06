@@ -6,7 +6,6 @@ import {
   BackHandler,
   ToastAndroid,
   Platform,
-  Alert,
 } from 'react-native';
 import {SafeAreaProvider, SafeAreaView} from 'react-native-safe-area-context';
 import {
@@ -15,6 +14,7 @@ import {
   ScoreBoard,
   GameControls,
   GameOverModal,
+  NoticeModal,
   PromotionModal,
 } from './src/components';
 import {
@@ -25,50 +25,125 @@ import {
   getGameStatus,
   getPieceColor,
   getPieceType,
-  getBestMove,
+  searchMoveForLevel,
   isGameOver,
   opponentOf,
   shouldAcceptDraw,
 } from './src/utils/chessUtils';
 import {initSounds, playSelectSound, playMoveSound, playKillSound, playErrorSound, releaseSounds} from './src/utils/soundUtils';
+import {initAds, showRewardedAd} from './src/lib/ads';
+import type {Notice} from './src/components/NoticeModal';
+import type {
+  Board,
+  Color,
+  GameMode,
+  GameState,
+  GameStatus,
+  MachineLevel,
+  Move,
+  Piece,
+  PieceType,
+  SquarePosition,
+} from './src/types/chess';
+
+interface MovingPiece {
+  fromRow: number;
+  fromCol: number;
+  toRow: number;
+  toCol: number;
+  isCapture: boolean;
+}
+
+interface PendingPromotion {
+  from: SquarePosition;
+  to: SquarePosition;
+  color: Color;
+  previewBoard: Board;
+}
+
+interface MoveSnapshot {
+  game: GameState;
+  capturedWhite: Piece[];
+  capturedBlack: Piece[];
+}
 
 const MOVE_ANIMATION_MS = 200;
 const MACHINE_DELAY_MS = 600;
-const capitalize = color => color.charAt(0).toUpperCase() + color.slice(1);
+const UNDO_NOTICES = {
+  cancelled: {
+    icon: 'cancel',
+    title: 'Ad cancelled',
+    message: 'You closed the ad before it finished, so your move cannot be undone.',
+  },
+  failed: {
+    icon: 'error-outline',
+    title: 'Ad failed',
+    message: 'The ad could not be played, so your move was not undone. Please try again.',
+  },
+  offline: {
+    icon: 'wifi-off',
+    title: 'No internet',
+    message: 'Please connect to the internet to watch an ad and undo your move.',
+  },
+  unavailable: {
+    icon: 'hourglass-empty',
+    title: 'No ad available',
+    message: 'No ad is available right now. Please try again shortly.',
+  },
+} satisfies Record<string, Notice>;
+
+const capitalize = (color: Color): string => color.charAt(0).toUpperCase() + color.slice(1);
 
 const App = () => {
   useEffect(() => {
     initSounds();
-    return () => releaseSounds();
+    const stopAds = initAds();
+    return () => {
+      stopAds();
+      releaseSounds();
+    };
   }, []);
 
   return (
     <SafeAreaProvider>
-      <StatusBar barStyle="light-content" backgroundColor="#0f0c29" />
+      <StatusBar barStyle="light-content" />
       <ChessGame />
     </SafeAreaProvider>
   );
 };
 
 const ChessGame = () => {
-  const [gameMode, setGameMode] = useState(null);
-  const [game, setGame] = useState(createInitialState);
-  const [selectedSquare, setSelectedSquare] = useState(null);
-  const [validMoves, setValidMoves] = useState([]);
-  const [capturedWhite, setCapturedWhite] = useState([]);
-  const [capturedBlack, setCapturedBlack] = useState([]);
-  const [gameStatus, setGameStatus] = useState({status: 'playing', currentTurn: 'white'});
-  const [movingPiece, setMovingPiece] = useState(null);
+  const [gameMode, setGameMode] = useState<GameMode | null>(null);
+  const [machineLevel, setMachineLevel] = useState<MachineLevel>('medium');
+  const [game, setGame] = useState<GameState>(createInitialState);
+  const [selectedSquare, setSelectedSquare] = useState<SquarePosition | null>(null);
+  const [validMoves, setValidMoves] = useState<Move[]>([]);
+  const [capturedWhite, setCapturedWhite] = useState<Piece[]>([]);
+  const [capturedBlack, setCapturedBlack] = useState<Piece[]>([]);
+  const [gameStatus, setGameStatus] = useState<GameStatus>({status: 'playing', currentTurn: 'white'});
+  const [movingPiece, setMovingPiece] = useState<MovingPiece | null>(null);
   const [showGameOverModal, setShowGameOverModal] = useState(false);
-  const [pendingPromotion, setPendingPromotion] = useState(null);
+  const [pendingPromotion, setPendingPromotion] = useState<PendingPromotion | null>(null);
+  // One snapshot per committed move, taken just before the move was played.
+  const [history, setHistory] = useState<MoveSnapshot[]>([]);
+  const [notice, setNotice] = useState<Notice | null>(null);
 
-  const timeoutsRef = useRef(new Set());
-  const lastBackPressRef = useRef(null);
+  const timeoutsRef = useRef(new Set<ReturnType<typeof setTimeout>>());
+  const lastBackPressRef = useRef<number | null>(null);
 
   const gameOver = isGameOver(gameStatus.status);
   const isMachineTurn = gameMode === 'PvM' && game.turn === 'black';
+  // In PvM, undo takes back the machine's reply and the player's move, so it is
+  // the player's turn again.
+  const movesToUndo = gameMode === 'PvM' ? 2 : 1;
+  const canUndo =
+    !gameOver &&
+    !isMachineTurn &&
+    !movingPiece &&
+    !pendingPromotion &&
+    history.length >= movesToUndo;
 
-  const schedule = useCallback((fn, ms) => {
+  const schedule = useCallback((fn: () => void, ms: number) => {
     const id = setTimeout(() => {
       timeoutsRef.current.delete(id);
       fn();
@@ -101,7 +176,7 @@ const ChessGame = () => {
     return () => backHandler.remove();
   }, [handleBackPress]);
 
-  const finishGame = useCallback(newStatus => {
+  const finishGame = useCallback((newStatus: GameStatus) => {
     setGameStatus(newStatus);
     setSelectedSquare(null);
     setValidMoves([]);
@@ -109,7 +184,7 @@ const ChessGame = () => {
   }, [schedule]);
 
   // Single entry point for every move (human or machine).
-  const commitMove = useCallback((from, to, promotionType) => {
+  const commitMove = useCallback((from: SquarePosition, to: SquarePosition, promotionType?: PieceType) => {
     const result = makeMove(game, from, to, promotionType);
     setMovingPiece(null);
     if (!result) {
@@ -118,6 +193,7 @@ const ChessGame = () => {
     }
 
     const {state: nextGame, move} = result;
+    setHistory(prev => [...prev, {game, capturedWhite, capturedBlack}]);
     if (move.captured) {
       if (getPieceColor(move.captured) === 'white') {
         setCapturedWhite(prev => [...prev, move.captured]);
@@ -138,28 +214,35 @@ const ChessGame = () => {
     } else {
       setGameStatus(newStatus);
     }
-  }, [game, finishGame]);
+  }, [game, capturedWhite, capturedBlack, finishGame]);
 
-  // Machine plays black in PvM.
+  // Machine plays black in PvM. It waits while a modal is open, so the game can't
+  // change behind a question such as "really want to resign?".
+  const isNoticeOpen = notice !== null;
   useEffect(() => {
-    if (!isMachineTurn || gameOver) return;
+    if (!isMachineTurn || gameOver || isNoticeOpen) return;
+    let cancelSearch: (() => void) | undefined;
     const thinkId = setTimeout(() => {
-      const move = getBestMove(game, 3);
-      if (!move) return;
-      setMovingPiece({
-        fromRow: move.from.row,
-        fromCol: move.from.col,
-        toRow: move.to.row,
-        toCol: move.to.col,
-        isCapture: !!move.captured,
+      cancelSearch = searchMoveForLevel(game, machineLevel, move => {
+        if (!move) return;
+        setMovingPiece({
+          fromRow: move.from.row,
+          fromCol: move.from.col,
+          toRow: move.to.row,
+          toCol: move.to.col,
+          isCapture: !!move.captured,
+        });
+        schedule(
+          () => commitMove(move.from, move.to, (move.promotion && getPieceType(move.promotion)) || undefined),
+          MOVE_ANIMATION_MS,
+        );
       });
-      schedule(
-        () => commitMove(move.from, move.to, move.promotion ? getPieceType(move.promotion) : undefined),
-        MOVE_ANIMATION_MS,
-      );
     }, MACHINE_DELAY_MS);
-    return () => clearTimeout(thinkId);
-  }, [isMachineTurn, gameOver, game, commitMove, schedule]);
+    return () => {
+      clearTimeout(thinkId);
+      cancelSearch?.();
+    };
+  }, [isMachineTurn, gameOver, isNoticeOpen, game, machineLevel, commitMove, schedule]);
 
   const resetGame = useCallback(() => {
     clearScheduled();
@@ -172,9 +255,10 @@ const ChessGame = () => {
     setMovingPiece(null);
     setShowGameOverModal(false);
     setPendingPromotion(null);
+    setHistory([]);
   }, [clearScheduled]);
 
-  const handlePromotionSelect = useCallback(promotionType => {
+  const handlePromotionSelect = useCallback((promotionType: PieceType) => {
     if (!pendingPromotion) return;
     setPendingPromotion(null);
     commitMove(pendingPromotion.from, pendingPromotion.to, promotionType);
@@ -184,8 +268,9 @@ const ChessGame = () => {
     setPendingPromotion(null);
   }, []);
 
-  const handleSelectMode = useCallback(mode => {
+  const handleSelectMode = useCallback((mode: GameMode, level: MachineLevel = 'medium') => {
     setGameMode(mode);
+    setMachineLevel(level);
     resetGame();
   }, [resetGame]);
 
@@ -195,57 +280,98 @@ const ChessGame = () => {
   }, [resetGame]);
 
   const handleResign = useCallback(() => {
-    if (gameOver) return;
+    if (gameOver || movingPiece) return;
     const resigning = gameMode === 'PvM' ? 'white' : game.turn;
     const label = gameMode === 'PvM' ? 'Do you' : `${capitalize(resigning)}, do you`;
-    Alert.alert('Resign', `${label} really want to resign?`, [
-      {text: 'Cancel', style: 'cancel'},
-      {
-        text: 'Resign',
-        style: 'destructive',
-        onPress: () => {
-          clearScheduled();
-          setMovingPiece(null);
-          setPendingPromotion(null);
-          finishGame({
-            status: 'resigned',
-            winner: opponentOf(resigning),
-            loser: resigning,
-            currentTurn: game.turn,
-          });
+    setNotice({
+      icon: 'flag',
+      title: 'Resign',
+      message: `${label} really want to resign?`,
+      actions: [
+        {label: 'Cancel', variant: 'secondary'},
+        {
+          label: 'Resign',
+          variant: 'danger',
+          onPress: () => {
+            clearScheduled();
+            setMovingPiece(null);
+            setPendingPromotion(null);
+            finishGame({
+              status: 'resigned',
+              winner: opponentOf(resigning),
+              loser: resigning,
+              currentTurn: game.turn,
+            });
+          },
         },
+      ],
+    });
+  }, [gameOver, movingPiece, gameMode, game, clearScheduled, finishGame]);
+
+  const handleUndo = useCallback(() => {
+    if (!canUndo) return;
+    const result = showRewardedAd({
+      onReward: () => {
+        const snapshot = history[history.length - movesToUndo];
+        setHistory(history.slice(0, -movesToUndo));
+        setGame(snapshot.game);
+        setCapturedWhite(snapshot.capturedWhite);
+        setCapturedBlack(snapshot.capturedBlack);
+        setGameStatus(getGameStatus(snapshot.game));
+        setSelectedSquare(null);
+        setValidMoves([]);
       },
-    ]);
-  }, [gameOver, gameMode, game, clearScheduled, finishGame]);
+      onCancel: () => {
+        setNotice(UNDO_NOTICES.cancelled);
+      },
+      onError: () => {
+        setNotice(UNDO_NOTICES.failed);
+      },
+    });
+    if (result === 'offline') {
+      setNotice(UNDO_NOTICES.offline);
+    } else if (result === 'unavailable') {
+      setNotice(UNDO_NOTICES.unavailable);
+    }
+  }, [canUndo, history, movesToUndo]);
 
   const handleOfferDraw = useCallback(() => {
     if (gameOver || isMachineTurn || movingPiece) return;
-    const drawStatus = {status: 'draw', reason: 'agreement', currentTurn: game.turn};
+    const drawStatus: GameStatus = {status: 'draw', reason: 'agreement', currentTurn: game.turn};
 
     if (gameMode === 'PvM') {
       if (shouldAcceptDraw(game, 'black')) {
-        Alert.alert('Draw offer', 'The machine accepts your draw offer.');
+        setNotice({
+          icon: 'handshake',
+          title: 'Draw offer',
+          message: 'The machine accepts your draw offer.',
+        });
         finishGame(drawStatus);
       } else {
-        Alert.alert('Draw offer', 'The machine declines your draw offer.');
+        setNotice({
+          icon: 'handshake',
+          title: 'Draw offer',
+          message: 'The machine declines your draw offer.',
+        });
       }
       return;
     }
 
     const offering = game.turn;
     const responding = opponentOf(offering);
-    Alert.alert(
-      'Draw offer',
-      `${capitalize(offering)} offers a draw. ${capitalize(responding)}, do you accept?`,
-      [
-        {text: 'Decline', style: 'cancel'},
-        {text: 'Accept', onPress: () => finishGame(drawStatus)},
+    setNotice({
+      icon: 'handshake',
+      title: 'Draw offer',
+      message: `${capitalize(offering)} offers a draw. ${capitalize(responding)}, do you accept?`,
+      actions: [
+        {label: 'Decline', variant: 'secondary'},
+        {label: 'Accept', onPress: () => finishGame(drawStatus)},
       ],
-    );
+    });
   }, [gameOver, isMachineTurn, movingPiece, gameMode, game, finishGame]);
 
   const handleSquarePress = useCallback(
-    (row, col) => {
+    (row: number, col: number) => {
       if (isMachineTurn || gameOver || movingPiece || pendingPromotion) return;
 
       const piece = game.board[row][col];
@@ -330,9 +456,11 @@ const ChessGame = () => {
             <ScoreBoard
               currentTurn={game.turn}
               gameMode={gameMode}
+              machineLevel={machineLevel}
               capturedWhite={capturedWhite}
               capturedBlack={capturedBlack}
               gameStatus={gameStatus}
+              isThinking={isMachineTurn && !gameOver}
             />
 
             <GameControls
@@ -342,13 +470,15 @@ const ChessGame = () => {
               onResign={handleResign}
               onOfferDraw={handleOfferDraw}
               canOfferDraw={!isMachineTurn}
+              onUndo={handleUndo}
+              canUndo={canUndo}
             />
           </View>
         </View>
       </View>
 
       <GameOverModal
-        visible={showGameOverModal}
+        visible={showGameOverModal && !notice}
         gameStatus={gameStatus}
         capturedWhite={capturedWhite}
         capturedBlack={capturedBlack}
@@ -357,6 +487,8 @@ const ChessGame = () => {
           resetGame();
         }}
       />
+
+      <NoticeModal notice={notice} onClose={() => setNotice(null)} />
 
       <PromotionModal
         visible={!!pendingPromotion}

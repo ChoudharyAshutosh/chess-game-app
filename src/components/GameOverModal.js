@@ -8,7 +8,7 @@ import {
   Dimensions,
 } from 'react-native';
 import {MaterialDesignIcons} from '@react-native-vector-icons/material-design-icons/static';
-import {PIECE_VALUES, DRAW_REASON_TEXT} from '../utils/chessUtils';
+import {DRAW_REASON_TEXT} from '../utils/chessUtils';
 
 const {width: screenWidth} = Dimensions.get('window');
 
@@ -39,12 +39,8 @@ const GameOverModal = ({visible, gameStatus, capturedWhite, capturedBlack, onClo
       ? `Draw: ${DRAW_REASON_TEXT[reason] || DRAW_REASON_TEXT.stalemate}`
       : '';
 
-  const calculateScore = (capturedPieces) => {
-    return capturedPieces.reduce((sum, piece) => sum + (PIECE_VALUES[piece] || 0), 0);
-  };
-
-  const whiteScore = calculateScore(capturedBlack || []);
-  const blackScore = calculateScore(capturedWhite || []);
+  const whiteTaken = capturedBlack?.length || 0;
+  const blackTaken = capturedWhite?.length || 0;
 
   return (
     <Modal
@@ -70,11 +66,9 @@ const GameOverModal = ({visible, gameStatus, capturedWhite, capturedBlack, onClo
               <View style={[styles.scoreBox, winner === 'white' && styles.winnerBox]}>
                 <Text style={styles.playerLabel}>White</Text>
                 <Text style={[styles.scoreText, winner === 'white' && styles.winnerText]}>
-                  {whiteScore}
+                  {whiteTaken}
                 </Text>
-                <Text style={styles.capturedText}>
-                  ({capturedBlack?.length || 0} pieces)
-                </Text>
+                <Text style={styles.capturedText}>pieces taken</Text>
               </View>
               {winner === 'white' && <Text style={styles.winnerLabel}>Winner!</Text>}
               {winner === 'black' && winner !== 'white' && <Text style={styles.loserLabel}>Loser</Text>}
@@ -88,11 +82,9 @@ const GameOverModal = ({visible, gameStatus, capturedWhite, capturedBlack, onClo
               <View style={[styles.scoreBox, winner === 'black' && styles.winnerBox]}>
                 <Text style={styles.playerLabel}>Black</Text>
                 <Text style={[styles.scoreText, winner === 'black' && styles.winnerText]}>
-                  {blackScore}
+                  {blackTaken}
                 </Text>
-                <Text style={styles.capturedText}>
-                  ({capturedWhite?.length || 0} pieces)
-                </Text>
+                <Text style={styles.capturedText}>pieces taken</Text>
               </View>
               {winner === 'black' && <Text style={styles.winnerLabel}>Winner!</Text>}
               {winner === 'white' && winner !== 'black' && <Text style={styles.loserLabel}>Loser</Text>}

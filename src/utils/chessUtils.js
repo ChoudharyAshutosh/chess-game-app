@@ -925,7 +925,7 @@ const negamax = (state, depth, alpha, beta, ply) => {
 
 // Scores every legal root move. A move that repeats a position for the third
 // time is scored as a draw.
-const scoreRootMoves = (state, depth) => {
+const getRootMoves = state => {
   const moves = getAllLegalMoves(state);
   // Shuffle first so equally good moves are picked at random.
   for (let i = moves.length - 1; i > 0; i--) {
@@ -933,20 +933,23 @@ const scoreRootMoves = (state, depth) => {
     [moves[i], moves[j]] = [moves[j], moves[i]];
   }
   orderMoves(moves);
+  return moves;
+};
 
+const scoreRootMove = (state, move, depth, alpha) => {
+  const child = advancePosition(state, move);
+  const key = getPositionKey(child);
+  if ((state.positionCounts[key] || 0) + 1 >= 3) return 0;
+  // Bounded by the best score so far: moves that cannot beat it are cut off
+  // early and return a score no higher than alpha.
+  return -negamax(child, depth - 1, -Infinity, -alpha, 1);
+};
+
+const scoreRootMoves = (state, depth) => {
   const scored = [];
   let alpha = -Infinity;
-  for (const move of moves) {
-    const child = advancePosition(state, move);
-    const key = getPositionKey(child);
-    let score;
-    if ((state.positionCounts[key] || 0) + 1 >= 3) {
-      score = 0;
-    } else {
-      // Bounded by the best score so far: moves that cannot beat it are cut
-      // off early and return a score no higher than alpha.
-      score = -negamax(child, depth - 1, -Infinity, -alpha, 1);
-    }
+  for (const move of getRootMoves(state)) {
+    const score = scoreRootMove(state, move, depth, alpha);
     scored.push({move, score});
     if (score > alpha) alpha = score;
   }
@@ -962,6 +965,71 @@ export const getBestMove = (state, depth = 3) => {
     if (entry.score > best.score) best = entry;
   }
   return best.move;
+};
+
+// Same search as getBestMove, but it pauses between root moves so the app can
+// handle touches and draw while thinking. Calls onDone with the move (or null)
+// and returns a function that cancels the search.
+const SEARCH_SLICE_MS = 8;
+export const searchBestMove = (state, depth, onDone) => {
+  const moves = getRootMoves(state);
+  let index = 0;
+  let bestMove = null;
+  let alpha = -Infinity;
+  let timer = null;
+
+  const run = () => {
+    const sliceEnd = Date.now() + SEARCH_SLICE_MS;
+    while (index < moves.length) {
+      const move = moves[index++];
+      const score = scoreRootMove(state, move, depth, alpha);
+      if (bestMove === null || score > alpha) bestMove = move;
+      if (score > alpha) alpha = score;
+      if (index < moves.length && Date.now() >= sliceEnd) {
+        timer = setTimeout(run, 0);
+        return;
+      }
+    }
+    timer = null;
+    onDone(bestMove);
+  };
+
+  timer = setTimeout(run, 0);
+  return () => {
+    if (timer !== null) clearTimeout(timer);
+    timer = null;
+  };
+};
+
+// Search depth alone can't make the machine easy: its capture search rarely
+// gives pieces away even at depth 1. Lower levels also sometimes play a random
+// legal move, which leaves openings for the player to punish.
+export const MACHINE_LEVELS = {
+  easy: {depth: 1, mistakeChance: 0.4},
+  medium: {depth: 2, mistakeChance: 0.1},
+  hard: {depth: 3, mistakeChance: 0},
+};
+
+const pickMistake = (state, {mistakeChance}) => {
+  if (Math.random() >= mistakeChance) return null;
+  const moves = getAllLegalMoves(state);
+  return moves.length > 0
+    ? moves[Math.floor(Math.random() * moves.length)]
+    : null;
+};
+
+export const getMoveForLevel = (state, level) => {
+  const settings = MACHINE_LEVELS[level];
+  return pickMistake(state, settings) ?? getBestMove(state, settings.depth);
+};
+
+// getMoveForLevel for the app: never blocks, and returns a cancel function.
+export const searchMoveForLevel = (state, level, onDone) => {
+  const settings = MACHINE_LEVELS[level];
+  const mistake = pickMistake(state, settings);
+  if (!mistake) return searchBestMove(state, settings.depth, onDone);
+  const timer = setTimeout(() => onDone(mistake), 0);
+  return () => clearTimeout(timer);
 };
 
 // Search score for the side to move, in centipawns.

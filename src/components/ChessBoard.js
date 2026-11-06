@@ -1,4 +1,4 @@
-import React from 'react';
+import React, {useCallback, useEffect, useRef} from 'react';
 import {View, StyleSheet, Dimensions, Text} from 'react-native';
 import Square from './Square';
 import {getPieceType, getPieceColor} from '../utils/chessUtils';
@@ -14,6 +14,16 @@ const ChessBoard = ({
   movingPiece,
   gameStatus,
 }) => {
+  // Keeps the press handler stable so memoized squares are not all redrawn.
+  const onSquarePressRef = useRef(onSquarePress);
+  useEffect(() => {
+    onSquarePressRef.current = onSquarePress;
+  }, [onSquarePress]);
+  const handleSquarePress = useCallback(
+    (row, col) => onSquarePressRef.current(row, col),
+    [],
+  );
+
   const isInCheck = gameStatus.status === 'check' || gameStatus.status === 'checkmate';
   const currentTurnColor = gameStatus.currentTurn;
   
@@ -28,7 +38,7 @@ const ChessBoard = ({
             <View key={rowIndex} style={styles.row}>
               {row.map((piece, colIndex) => {
                 const isSelected =
-                  selectedSquare &&
+                  !!selectedSquare &&
                   selectedSquare.row === rowIndex &&
                   selectedSquare.col === colIndex;
 
@@ -36,11 +46,11 @@ const ChessBoard = ({
                   m => m.row === rowIndex && m.col === colIndex,
                 );
                 
-                const isMoving = movingPiece && 
+                const isMoving = !!movingPiece &&
                   movingPiece.toRow === rowIndex && 
                   movingPiece.toCol === colIndex;
 
-                const isSource = movingPiece &&
+                const isSource = !!movingPiece &&
                   movingPiece.fromRow === rowIndex &&
                   movingPiece.fromCol === colIndex;
 
@@ -55,7 +65,7 @@ const ChessBoard = ({
                     piece={piece}
                     isSelected={isSelected}
                     isValidMove={isValidMove}
-                    onPress={onSquarePress}
+                    onPress={handleSquarePress}
                     isMovingPiece={isMoving}
                     isSourcePiece={isSource}
                     isKingInCheck={isKingInCheck}
