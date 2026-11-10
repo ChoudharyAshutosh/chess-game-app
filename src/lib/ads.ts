@@ -13,7 +13,7 @@ const REWARDED_ID: string = __DEV__
   ? TestIds.REWARDED
   : Platform.select({
       ios: 'REPLACE_WITH_IOS_REWARDED_AD_UNIT_ID',
-      android: 'REPLACE_WITH_ANDROID_REWARDED_AD_UNIT_ID',
+      android: 'ca-app-pub-7674334739423619/9994869426',
       default: '',
     });
 
