@@ -7,3 +7,4 @@ export {default as GameControls} from './GameControls';
 export {default as GameOverModal} from './GameOverModal';
 export {default as PromotionModal} from './PromotionModal';
 export {default as NoticeModal} from './NoticeModal';
+export {default as Board3D} from './Board3D';

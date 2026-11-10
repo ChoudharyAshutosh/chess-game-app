@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import {SafeAreaProvider, SafeAreaView} from 'react-native-safe-area-context';
 import {
-  ChessBoard,
+  Board3D,
   GameModeSelection,
   ScoreBoard,
   GameControls,
@@ -442,7 +442,7 @@ const ChessGame = () => {
       <View style={styles.backgroundGradient}>
         <View style={styles.content}>
           <View style={styles.boardSection}>
-            <ChessBoard
+            <Board3D
               board={pendingPromotion ? pendingPromotion.previewBoard : game.board}
               selectedSquare={selectedSquare}
               validMoves={validMoves.map(m => m.to)}
