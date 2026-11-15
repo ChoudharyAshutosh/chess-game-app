@@ -3,104 +3,124 @@ import {View, Text, TouchableOpacity, StyleSheet} from 'react-native';
 import {MaterialIcons} from '@react-native-vector-icons/material-icons/static';
 import {isGameOver as isFinished} from '../utils/chessUtils';
 
-const GameControls = ({gameStatus, onReset, onBack, onResign, onOfferDraw, canOfferDraw, onUndo, canUndo, onHint, canHint}) => {
+const ControlButton = ({icon, label, onPress, disabled, style, ad}) => (
+  <TouchableOpacity
+    style={[styles.button, style, disabled && styles.disabledButton]}
+    onPress={onPress}
+    disabled={disabled}
+    accessibilityLabel={ad ? `${label}, watch an ad` : label}
+    activeOpacity={0.7}>
+    <MaterialIcons name={icon} size={20} color="#fff" />
+    <Text style={styles.buttonText}>{label}</Text>
+    {ad && (
+      <View style={styles.adBadge}>
+        <MaterialIcons name="smart-display" size={11} color="#0f0c29" />
+        <Text style={styles.adText}>AD</Text>
+      </View>
+    )}
+  </TouchableOpacity>
+);
+
+// Three rows, most used first: help during the game (both watch an ad), ending
+// the game, then leaving it. All buttons are the same size. When the game is over only Menu and Play Again remain.
+const GameControls = ({
+  gameStatus,
+  onReset,
+  onBack,
+  onResign,
+  onOfferDraw,
+  canOfferDraw,
+  onUndo,
+  canUndo,
+  onHint,
+  canHint,
+}) => {
   const isGameOver = isFinished(gameStatus.status);
+
+  if (isGameOver) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.row}>
+          <ControlButton icon="arrow-back" label="Menu" onPress={onBack} />
+          <ControlButton
+            icon="replay"
+            label="Play Again"
+            onPress={onReset}
+            style={styles.retryButton}
+          />
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
-      <TouchableOpacity
-        style={styles.button}
-        onPress={onBack}
-        activeOpacity={0.7}>
-        <MaterialIcons name="arrow-back" size={20} color="#fff" />
-        <Text style={styles.buttonText}>Menu</Text>
-      </TouchableOpacity>
-
-      {isGameOver && (
-        <TouchableOpacity
-          style={[styles.button, styles.retryButton]}
-          onPress={onReset}
-          activeOpacity={0.7}>
-          <MaterialIcons name="replay" size={20} color="#fff" />
-          <Text style={styles.buttonText}>Play Again</Text>
-        </TouchableOpacity>
-      )}
-
-      {!isGameOver && (
-        <TouchableOpacity
-          style={[styles.button, styles.resetButton]}
-          onPress={onReset}
-          activeOpacity={0.7}>
-          <MaterialIcons name="refresh" size={20} color="#fff" />
-          <Text style={styles.buttonText}>Restart</Text>
-        </TouchableOpacity>
-      )}
-
-      {!isGameOver && (
-        <TouchableOpacity
-          style={[styles.button, styles.drawButton, !canOfferDraw && styles.disabledButton]}
-          onPress={onOfferDraw}
-          disabled={!canOfferDraw}
-          activeOpacity={0.7}>
-          <MaterialIcons name="handshake" size={20} color="#fff" />
-          <Text style={styles.buttonText}>Offer Draw</Text>
-        </TouchableOpacity>
-      )}
-
-      {!isGameOver && (
-        <TouchableOpacity
-          style={[styles.button, styles.undoButton, !canUndo && styles.disabledButton]}
-          onPress={onUndo}
-          disabled={!canUndo}
-          activeOpacity={0.7}>
-          <MaterialIcons name="undo" size={20} color="#fff" />
-          <Text style={styles.buttonText}>Undo (Watch Ad)</Text>
-        </TouchableOpacity>
-      )}
-
-      {!isGameOver && (
-        <TouchableOpacity
-          style={[styles.button, styles.hintButton, !canHint && styles.disabledButton]}
+      <View style={styles.row}>
+        <ControlButton
+          icon="lightbulb-outline"
+          label="Hint"
           onPress={onHint}
           disabled={!canHint}
-          activeOpacity={0.7}>
-          <MaterialIcons name="lightbulb-outline" size={20} color="#fff" />
-          <Text style={styles.buttonText}>Hint (Watch Ad)</Text>
-        </TouchableOpacity>
-      )}
-
-      {!isGameOver && (
-        <TouchableOpacity
-          style={[styles.button, styles.resignButton]}
+          style={styles.hintButton}
+          ad
+        />
+        <ControlButton
+          icon="undo"
+          label="Undo"
+          onPress={onUndo}
+          disabled={!canUndo}
+          style={styles.undoButton}
+          ad
+        />
+      </View>
+      <View style={styles.row}>
+        <ControlButton
+          icon="handshake"
+          label="Offer Draw"
+          onPress={onOfferDraw}
+          disabled={!canOfferDraw}
+          style={styles.drawButton}
+        />
+        <ControlButton
+          icon="flag"
+          label="Resign"
           onPress={onResign}
-          activeOpacity={0.7}>
-          <MaterialIcons name="flag" size={20} color="#fff" />
-          <Text style={styles.buttonText}>Resign</Text>
-        </TouchableOpacity>
-      )}
+          style={styles.resignButton}
+        />
+      </View>
+      <View style={styles.row}>
+        <ControlButton icon="arrow-back" label="Menu" onPress={onBack} />
+        <ControlButton
+          icon="refresh"
+          label="Restart"
+          onPress={onReset}
+          style={styles.resetButton}
+        />
+      </View>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    alignItems: 'center',
     paddingVertical: 12,
     paddingHorizontal: 16,
+    gap: 10,
+  },
+  row: {
+    flexDirection: 'row',
     gap: 12,
   },
   button: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    // A fixed height keeps every button the same size, with or without an AD tag.
+    height: 48,
+    paddingHorizontal: 12,
     borderRadius: 12,
-    minWidth: '42%',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.15)',
     gap: 8,
@@ -136,6 +156,20 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 14,
     fontWeight: '600',
+  },
+  adBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    backgroundColor: '#FFD700',
+    borderRadius: 6,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+  },
+  adText: {
+    color: '#0f0c29',
+    fontSize: 10,
+    fontWeight: 'bold',
   },
 });
 
