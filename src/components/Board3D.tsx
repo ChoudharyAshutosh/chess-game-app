@@ -1,10 +1,16 @@
-import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
-import {StyleSheet, View} from 'react-native';
-import {WebView, type WebViewMessageEvent} from 'react-native-webview';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import { ActivityIndicator, Animated, StyleSheet, View } from 'react-native';
+import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 import ChessBoard from './ChessBoard';
 import boardHtml from '../board3d/boardHtml.generated';
-import type {BoardEvent, BoardState} from '../board3d/protocol';
-import type {Board, GameStatus, SquarePosition} from '../types/chess';
+import type { BoardEvent, BoardState } from '../board3d/protocol';
+import type { Board, GameStatus, SquarePosition } from '../types/chess';
 
 interface MovingPiece {
   fromRow: number;
@@ -23,7 +29,7 @@ interface Board3DProps {
   gameStatus: GameStatus;
 }
 
-const KING_OF: Record<string, string> = {white: '♔', black: '♚'};
+const KING_OF: Record<string, string> = { white: '♔', black: '♚' };
 
 interface WebViewHandle {
   injectJavaScript: (script: string) => void;
@@ -31,21 +37,26 @@ interface WebViewHandle {
 
 // The package types WebView without its ref, though it does forward one.
 const WebViewWithRef = WebView as unknown as React.ComponentType<
-  React.ComponentProps<typeof WebView> & {ref?: React.Ref<WebViewHandle>}
+  React.ComponentProps<typeof WebView> & { ref?: React.Ref<WebViewHandle> }
 >;
 
-const findCheckedKing = (board: Board, gameStatus: GameStatus): SquarePosition | null => {
-  if (gameStatus.status !== 'check' && gameStatus.status !== 'checkmate') return null;
+const findCheckedKing = (
+  board: Board,
+  gameStatus: GameStatus,
+): SquarePosition | null => {
+  if (gameStatus.status !== 'check' && gameStatus.status !== 'checkmate')
+    return null;
   const king = KING_OF[gameStatus.currentTurn];
   for (let row = 0; row < 8; row++) {
     const col = board[row].indexOf(king);
-    if (col !== -1) return {row, col};
+    if (col !== -1) return { row, col };
   }
   return null;
 };
 
-// Draws the board in 3D (three.js inside a WebView). The flat 2D board is shown
-// while the 3D board loads, and stays if the phone can't draw 3D graphics.
+// Draws the board in 3D (three.js inside a WebView). It fades in once loaded,
+// with a spinner until then. The flat 2D board is used only if the phone can't
+// draw 3D graphics.
 const Board3D = (props: Board3DProps) => {
   const {
     board,
@@ -59,6 +70,7 @@ const Board3D = (props: Board3DProps) => {
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
   const lastSentRef = useRef('');
+  const fadeIn = useRef(new Animated.Value(0)).current;
 
   const onSquarePressRef = useRef(onSquarePress);
   useEffect(() => {
@@ -93,56 +105,82 @@ const Board3D = (props: Board3DProps) => {
   const stateJsonRef = useRef(stateJson);
   useEffect(() => {
     stateJsonRef.current = stateJson;
-    if (ready && !failed && stateJson !== lastSentRef.current) sendState(stateJson);
+    if (ready && !failed && stateJson !== lastSentRef.current)
+      sendState(stateJson);
   }, [ready, failed, stateJson, sendState]);
 
-  const handleMessage = useCallback((event: WebViewMessageEvent) => {
-    let message: BoardEvent;
-    try {
-      message = JSON.parse(event.nativeEvent.data);
-    } catch {
-      return;
-    }
-    if (message.type === 'ready') {
-      // Also sent again if the page reloads, which loses the position.
-      sendState(stateJsonRef.current);
-      setReady(true);
-    } else if (message.type === 'unsupported') {
-      console.warn('3D board unavailable, using the 2D board:', message.reason);
-      setFailed(true);
-    } else if (message.type === 'press') {
-      onSquarePressRef.current(message.row, message.col);
-    }
-  }, [sendState]);
+  const handleMessage = useCallback(
+    (event: WebViewMessageEvent) => {
+      let message: BoardEvent;
+      try {
+        message = JSON.parse(event.nativeEvent.data);
+      } catch {
+        return;
+      }
+      if (message.type === 'ready') {
+        // Also sent again if the page reloads, which loses the position.
+        sendState(stateJsonRef.current);
+        setReady(true);
+        Animated.timing(fadeIn, {
+          toValue: 1,
+          duration: 220,
+          useNativeDriver: true,
+        }).start();
+      } else if (message.type === 'unsupported') {
+        console.warn(
+          '3D board unavailable, using the 2D board:',
+          message.reason,
+        );
+        setFailed(true);
+      } else if (message.type === 'press') {
+        onSquarePressRef.current(message.row, message.col);
+      }
+    },
+    [sendState, fadeIn],
+  );
 
   const fail = useCallback(() => setFailed(true), []);
 
-  const flatBoard = <ChessBoard {...props} />;
-  if (failed) return <View style={styles.container}>{flatBoard}</View>;
+  if (failed) {
+    return (
+      <View style={styles.container}>
+        <ChessBoard {...props} />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
-      <WebViewWithRef
-        ref={webViewRef}
-        // Any https address works; it stops the WebView failing to read cookies for about:blank.
-        source={{html: boardHtml, baseUrl: 'https://board3d.local/'}}
-        originWhitelist={['*']}
-        style={styles.webView}
-        containerStyle={styles.webView}
-        onMessage={handleMessage}
-        onError={fail}
-        onRenderProcessGone={fail}
-        onContentProcessDidTerminate={fail}
-        javaScriptEnabled
-        scrollEnabled={false}
-        bounces={false}
-        overScrollMode="never"
-        setBuiltInZoomControls={false}
-        textZoom={100}
-        androidLayerType="hardware"
-        webviewDebuggingEnabled={__DEV__}
-      />
-      {!ready && <View style={styles.loadingBoard}>{flatBoard}</View>}
+      <Animated.View style={[styles.webView, { opacity: fadeIn }]}>
+        <WebViewWithRef
+          ref={webViewRef}
+          // Any https address works; it stops the WebView failing to read cookies for about:blank.
+          source={{ html: boardHtml, baseUrl: 'https://board3d.local/' }}
+          originWhitelist={['*']}
+          style={styles.webView}
+          containerStyle={styles.webView}
+          onMessage={handleMessage}
+          onError={fail}
+          onRenderProcessGone={fail}
+          onContentProcessDidTerminate={fail}
+          javaScriptEnabled
+          scrollEnabled={false}
+          bounces={false}
+          overScrollMode="never"
+          setBuiltInZoomControls={false}
+          textZoom={100}
+          webviewDebuggingEnabled={__DEV__}
+        />
+      </Animated.View>
+      {!ready && (
+        <View style={styles.loading} pointerEvents="none">
+          <ActivityIndicator
+            size="large"
+            color="#FFD700"
+            testID="board3d-loading"
+          />
+        </View>
+      )}
     </View>
   );
 };
@@ -162,7 +200,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     backgroundColor: 'transparent',
   },
-  loadingBoard: {
+  loading: {
     position: 'absolute',
     top: 0,
     left: 0,

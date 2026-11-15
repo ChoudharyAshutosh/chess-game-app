@@ -6,7 +6,7 @@ import React from 'react';
 import ReactTestRenderer from 'react-test-renderer';
 import App from '../App';
 import {
-  ChessBoard,
+  Board3D,
   GameModeSelection,
   GameOverModal,
   PromotionModal,
@@ -46,8 +46,8 @@ const start = async mode => {
   });
 };
 
-const board = () => renderer.root.findByType(ChessBoard).props.board;
-const gameStatus = () => renderer.root.findByType(ChessBoard).props.gameStatus;
+const board = () => renderer.root.findByType(Board3D).props.board;
+const gameStatus = () => renderer.root.findByType(Board3D).props.gameStatus;
 const at = name => {
   const {row, col} = algebraicToSquare(name);
   return board()[row][col];
@@ -56,7 +56,7 @@ const at = name => {
 const tap = name => {
   const {row, col} = algebraicToSquare(name);
   act(() => {
-    renderer.root.findByType(ChessBoard).props.onSquarePress(row, col);
+    renderer.root.findByType(Board3D).props.onSquarePress(row, col);
   });
 };
 
@@ -378,7 +378,7 @@ describe('player vs machine', () => {
       jest.advanceTimersByTime(1000);
     });
     expect(JSON.stringify(board())).not.toBe(before);
-    expect(renderer.root.findByType(ChessBoard).props.gameStatus.currentTurn).toBe('white');
+    expect(renderer.root.findByType(Board3D).props.gameStatus.currentTurn).toBe('white');
   });
 
   test('player cannot move black pieces', async () => {

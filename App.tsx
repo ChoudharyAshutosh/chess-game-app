@@ -1,4 +1,4 @@
-import React, {useState, useCallback, useEffect, useRef} from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View,
   StyleSheet,
@@ -7,7 +7,7 @@ import {
   ToastAndroid,
   Platform,
 } from 'react-native';
-import {SafeAreaProvider, SafeAreaView} from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import {
   Board3D,
   GameModeSelection,
@@ -30,9 +30,16 @@ import {
   opponentOf,
   shouldAcceptDraw,
 } from './src/utils/chessUtils';
-import {initSounds, playSelectSound, playMoveSound, playKillSound, playErrorSound, releaseSounds} from './src/utils/soundUtils';
-import {initAds, showRewardedAd} from './src/lib/ads';
-import type {Notice} from './src/components/NoticeModal';
+import {
+  initSounds,
+  playSelectSound,
+  playMoveSound,
+  playKillSound,
+  playErrorSound,
+  releaseSounds,
+} from './src/utils/soundUtils';
+import { initAds, showRewardedAd } from './src/lib/ads';
+import type { Notice } from './src/components/NoticeModal';
 import type {
   Board,
   Color,
@@ -73,17 +80,20 @@ const UNDO_NOTICES = {
   cancelled: {
     icon: 'cancel',
     title: 'Ad cancelled',
-    message: 'You closed the ad before it finished, so your move cannot be undone.',
+    message:
+      'You closed the ad before it finished, so your move cannot be undone.',
   },
   failed: {
     icon: 'error-outline',
     title: 'Ad failed',
-    message: 'The ad could not be played, so your move was not undone. Please try again.',
+    message:
+      'The ad could not be played, so your move was not undone. Please try again.',
   },
   offline: {
     icon: 'wifi-off',
     title: 'No internet',
-    message: 'Please connect to the internet to watch an ad and undo your move.',
+    message:
+      'Please connect to the internet to watch an ad and undo your move.',
   },
   unavailable: {
     icon: 'hourglass-empty',
@@ -92,7 +102,8 @@ const UNDO_NOTICES = {
   },
 } satisfies Record<string, Notice>;
 
-const capitalize = (color: Color): string => color.charAt(0).toUpperCase() + color.slice(1);
+const capitalize = (color: Color): string =>
+  color.charAt(0).toUpperCase() + color.slice(1);
 
 const App = () => {
   useEffect(() => {
@@ -116,14 +127,20 @@ const ChessGame = () => {
   const [gameMode, setGameMode] = useState<GameMode | null>(null);
   const [machineLevel, setMachineLevel] = useState<MachineLevel>('medium');
   const [game, setGame] = useState<GameState>(createInitialState);
-  const [selectedSquare, setSelectedSquare] = useState<SquarePosition | null>(null);
+  const [selectedSquare, setSelectedSquare] = useState<SquarePosition | null>(
+    null,
+  );
   const [validMoves, setValidMoves] = useState<Move[]>([]);
   const [capturedWhite, setCapturedWhite] = useState<Piece[]>([]);
   const [capturedBlack, setCapturedBlack] = useState<Piece[]>([]);
-  const [gameStatus, setGameStatus] = useState<GameStatus>({status: 'playing', currentTurn: 'white'});
+  const [gameStatus, setGameStatus] = useState<GameStatus>({
+    status: 'playing',
+    currentTurn: 'white',
+  });
   const [movingPiece, setMovingPiece] = useState<MovingPiece | null>(null);
   const [showGameOverModal, setShowGameOverModal] = useState(false);
-  const [pendingPromotion, setPendingPromotion] = useState<PendingPromotion | null>(null);
+  const [pendingPromotion, setPendingPromotion] =
+    useState<PendingPromotion | null>(null);
   // One snapshot per committed move, taken just before the move was played.
   const [history, setHistory] = useState<MoveSnapshot[]>([]);
   const [notice, setNotice] = useState<Notice | null>(null);
@@ -160,7 +177,10 @@ const ChessGame = () => {
   useEffect(() => clearScheduled, [clearScheduled]);
 
   const handleBackPress = useCallback(() => {
-    if (lastBackPressRef.current && Date.now() - lastBackPressRef.current < 1000) {
+    if (
+      lastBackPressRef.current &&
+      Date.now() - lastBackPressRef.current < 1000
+    ) {
       BackHandler.exitApp();
       return true;
     }
@@ -172,49 +192,58 @@ const ChessGame = () => {
   }, []);
 
   useEffect(() => {
-    const backHandler = BackHandler.addEventListener('hardwareBackPress', handleBackPress);
+    const backHandler = BackHandler.addEventListener(
+      'hardwareBackPress',
+      handleBackPress,
+    );
     return () => backHandler.remove();
   }, [handleBackPress]);
 
-  const finishGame = useCallback((newStatus: GameStatus) => {
-    setGameStatus(newStatus);
-    setSelectedSquare(null);
-    setValidMoves([]);
-    schedule(() => setShowGameOverModal(true), 500);
-  }, [schedule]);
+  const finishGame = useCallback(
+    (newStatus: GameStatus) => {
+      setGameStatus(newStatus);
+      setSelectedSquare(null);
+      setValidMoves([]);
+      schedule(() => setShowGameOverModal(true), 500);
+    },
+    [schedule],
+  );
 
   // Single entry point for every move (human or machine).
-  const commitMove = useCallback((from: SquarePosition, to: SquarePosition, promotionType?: PieceType) => {
-    const result = makeMove(game, from, to, promotionType);
-    setMovingPiece(null);
-    if (!result) {
-      playErrorSound();
-      return;
-    }
-
-    const {state: nextGame, move} = result;
-    setHistory(prev => [...prev, {game, capturedWhite, capturedBlack}]);
-    if (move.captured) {
-      if (getPieceColor(move.captured) === 'white') {
-        setCapturedWhite(prev => [...prev, move.captured]);
-      } else {
-        setCapturedBlack(prev => [...prev, move.captured]);
+  const commitMove = useCallback(
+    (from: SquarePosition, to: SquarePosition, promotionType?: PieceType) => {
+      const result = makeMove(game, from, to, promotionType);
+      setMovingPiece(null);
+      if (!result) {
+        playErrorSound();
+        return;
       }
-      playKillSound();
-    }
-    playMoveSound();
 
-    setGame(nextGame);
-    const newStatus = getGameStatus(nextGame);
-    if (newStatus.status === 'check' || newStatus.status === 'checkmate') {
-      playErrorSound();
-    }
-    if (isGameOver(newStatus.status)) {
-      finishGame(newStatus);
-    } else {
-      setGameStatus(newStatus);
-    }
-  }, [game, capturedWhite, capturedBlack, finishGame]);
+      const { state: nextGame, move } = result;
+      setHistory(prev => [...prev, { game, capturedWhite, capturedBlack }]);
+      if (move.captured) {
+        if (getPieceColor(move.captured) === 'white') {
+          setCapturedWhite(prev => [...prev, move.captured]);
+        } else {
+          setCapturedBlack(prev => [...prev, move.captured]);
+        }
+        playKillSound();
+      }
+      playMoveSound();
+
+      setGame(nextGame);
+      const newStatus = getGameStatus(nextGame);
+      if (newStatus.status === 'check' || newStatus.status === 'checkmate') {
+        playErrorSound();
+      }
+      if (isGameOver(newStatus.status)) {
+        finishGame(newStatus);
+      } else {
+        setGameStatus(newStatus);
+      }
+    },
+    [game, capturedWhite, capturedBlack, finishGame],
+  );
 
   // Machine plays black in PvM. It waits while a modal is open, so the game can't
   // change behind a question such as "really want to resign?".
@@ -233,7 +262,12 @@ const ChessGame = () => {
           isCapture: !!move.captured,
         });
         schedule(
-          () => commitMove(move.from, move.to, (move.promotion && getPieceType(move.promotion)) || undefined),
+          () =>
+            commitMove(
+              move.from,
+              move.to,
+              (move.promotion && getPieceType(move.promotion)) || undefined,
+            ),
           MOVE_ANIMATION_MS,
         );
       });
@@ -242,7 +276,15 @@ const ChessGame = () => {
       clearTimeout(thinkId);
       cancelSearch?.();
     };
-  }, [isMachineTurn, gameOver, isNoticeOpen, game, machineLevel, commitMove, schedule]);
+  }, [
+    isMachineTurn,
+    gameOver,
+    isNoticeOpen,
+    game,
+    machineLevel,
+    commitMove,
+    schedule,
+  ]);
 
   const resetGame = useCallback(() => {
     clearScheduled();
@@ -251,28 +293,34 @@ const ChessGame = () => {
     setValidMoves([]);
     setCapturedWhite([]);
     setCapturedBlack([]);
-    setGameStatus({status: 'playing', currentTurn: 'white'});
+    setGameStatus({ status: 'playing', currentTurn: 'white' });
     setMovingPiece(null);
     setShowGameOverModal(false);
     setPendingPromotion(null);
     setHistory([]);
   }, [clearScheduled]);
 
-  const handlePromotionSelect = useCallback((promotionType: PieceType) => {
-    if (!pendingPromotion) return;
-    setPendingPromotion(null);
-    commitMove(pendingPromotion.from, pendingPromotion.to, promotionType);
-  }, [pendingPromotion, commitMove]);
+  const handlePromotionSelect = useCallback(
+    (promotionType: PieceType) => {
+      if (!pendingPromotion) return;
+      setPendingPromotion(null);
+      commitMove(pendingPromotion.from, pendingPromotion.to, promotionType);
+    },
+    [pendingPromotion, commitMove],
+  );
 
   const handlePromotionCancel = useCallback(() => {
     setPendingPromotion(null);
   }, []);
 
-  const handleSelectMode = useCallback((mode: GameMode, level: MachineLevel = 'medium') => {
-    setGameMode(mode);
-    setMachineLevel(level);
-    resetGame();
-  }, [resetGame]);
+  const handleSelectMode = useCallback(
+    (mode: GameMode, level: MachineLevel = 'medium') => {
+      setGameMode(mode);
+      setMachineLevel(level);
+      resetGame();
+    },
+    [resetGame],
+  );
 
   const handleBackToMenu = useCallback(() => {
     setGameMode(null);
@@ -282,13 +330,14 @@ const ChessGame = () => {
   const handleResign = useCallback(() => {
     if (gameOver || movingPiece) return;
     const resigning = gameMode === 'PvM' ? 'white' : game.turn;
-    const label = gameMode === 'PvM' ? 'Do you' : `${capitalize(resigning)}, do you`;
+    const label =
+      gameMode === 'PvM' ? 'Do you' : `${capitalize(resigning)}, do you`;
     setNotice({
       icon: 'flag',
       title: 'Resign',
       message: `${label} really want to resign?`,
       actions: [
-        {label: 'Cancel', variant: 'secondary'},
+        { label: 'Cancel', variant: 'secondary' },
         {
           label: 'Resign',
           variant: 'danger',
@@ -337,7 +386,11 @@ const ChessGame = () => {
 
   const handleOfferDraw = useCallback(() => {
     if (gameOver || isMachineTurn || movingPiece) return;
-    const drawStatus: GameStatus = {status: 'draw', reason: 'agreement', currentTurn: game.turn};
+    const drawStatus: GameStatus = {
+      status: 'draw',
+      reason: 'agreement',
+      currentTurn: game.turn,
+    };
 
     if (gameMode === 'PvM') {
       if (shouldAcceptDraw(game, 'black')) {
@@ -362,10 +415,12 @@ const ChessGame = () => {
     setNotice({
       icon: 'handshake',
       title: 'Draw offer',
-      message: `${capitalize(offering)} offers a draw. ${capitalize(responding)}, do you accept?`,
+      message: `${capitalize(offering)} offers a draw. ${capitalize(
+        responding,
+      )}, do you accept?`,
       actions: [
-        {label: 'Decline', variant: 'secondary'},
-        {label: 'Accept', onPress: () => finishGame(drawStatus)},
+        { label: 'Decline', variant: 'secondary' },
+        { label: 'Accept', onPress: () => finishGame(drawStatus) },
       ],
     });
   }, [gameOver, isMachineTurn, movingPiece, gameMode, game, finishGame]);
@@ -377,12 +432,14 @@ const ChessGame = () => {
       const piece = game.board[row][col];
 
       if (selectedSquare) {
-        const matching = validMoves.filter(m => m.to.row === row && m.to.col === col);
+        const matching = validMoves.filter(
+          m => m.to.row === row && m.to.col === col,
+        );
 
         if (matching.length > 0) {
           const move = matching[0];
-          const from = {...selectedSquare};
-          const to = {row, col};
+          const from = { ...selectedSquare };
+          const to = { row, col };
           setSelectedSquare(null);
           setValidMoves([]);
           setMovingPiece({
@@ -400,7 +457,10 @@ const ChessGame = () => {
                 from,
                 to,
                 color: game.turn,
-                previewBoard: applyMoveToBoard(game.board, {...move, promotion: null}),
+                previewBoard: applyMoveToBoard(game.board, {
+                  ...move,
+                  promotion: null,
+                }),
               });
             } else {
               commitMove(from, to);
@@ -409,7 +469,10 @@ const ChessGame = () => {
           return;
         }
 
-        if ((selectedSquare.row !== row || selectedSquare.col !== col) && !piece) {
+        if (
+          (selectedSquare.row !== row || selectedSquare.col !== col) &&
+          !piece
+        ) {
           playErrorSound();
           return;
         }
@@ -417,33 +480,40 @@ const ChessGame = () => {
 
       if (piece && getPieceColor(piece) === game.turn) {
         playSelectSound();
-        setSelectedSquare({row, col});
+        setSelectedSquare({ row, col });
         setValidMoves(getValidMoves(game, row, col));
       } else {
         setSelectedSquare(null);
         setValidMoves([]);
       }
     },
-    [game, selectedSquare, validMoves, isMachineTurn, gameOver, movingPiece, pendingPromotion, schedule, commitMove],
+    [
+      game,
+      selectedSquare,
+      validMoves,
+      isMachineTurn,
+      gameOver,
+      movingPiece,
+      pendingPromotion,
+      schedule,
+      commitMove,
+    ],
   );
 
-  if (!gameMode) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.backgroundGradient}>
-          <GameModeSelection onSelectMode={handleSelectMode} />
-        </View>
-      </SafeAreaView>
-    );
-  }
-
+  // The 3D board stays mounted behind the menu, hidden, so it has finished
+  // loading by the time a game starts instead of appearing late.
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.backgroundGradient}>
-        <View style={styles.content}>
+        <View
+          style={[styles.content, !gameMode && styles.hidden]}
+          pointerEvents={gameMode ? 'auto' : 'none'}
+        >
           <View style={styles.boardSection}>
             <Board3D
-              board={pendingPromotion ? pendingPromotion.previewBoard : game.board}
+              board={
+                pendingPromotion ? pendingPromotion.previewBoard : game.board
+              }
               selectedSquare={selectedSquare}
               validMoves={validMoves.map(m => m.to)}
               onSquarePress={handleSquarePress}
@@ -452,50 +522,62 @@ const ChessGame = () => {
             />
           </View>
 
-          <View style={styles.infoSection}>
-            <ScoreBoard
-              currentTurn={game.turn}
-              gameMode={gameMode}
-              machineLevel={machineLevel}
-              capturedWhite={capturedWhite}
-              capturedBlack={capturedBlack}
-              gameStatus={gameStatus}
-              isThinking={isMachineTurn && !gameOver}
-            />
+          {gameMode && (
+            <View style={styles.infoSection}>
+              <ScoreBoard
+                currentTurn={game.turn}
+                gameMode={gameMode}
+                machineLevel={machineLevel}
+                capturedWhite={capturedWhite}
+                capturedBlack={capturedBlack}
+                gameStatus={gameStatus}
+                isThinking={isMachineTurn && !gameOver}
+              />
 
-            <GameControls
-              gameStatus={gameStatus}
-              onReset={resetGame}
-              onBack={handleBackToMenu}
-              onResign={handleResign}
-              onOfferDraw={handleOfferDraw}
-              canOfferDraw={!isMachineTurn}
-              onUndo={handleUndo}
-              canUndo={canUndo}
-            />
-          </View>
+              <GameControls
+                gameStatus={gameStatus}
+                onReset={resetGame}
+                onBack={handleBackToMenu}
+                onResign={handleResign}
+                onOfferDraw={handleOfferDraw}
+                canOfferDraw={!isMachineTurn}
+                onUndo={handleUndo}
+                canUndo={canUndo}
+              />
+            </View>
+          )}
         </View>
+
+        {!gameMode && (
+          <View style={styles.menu}>
+            <GameModeSelection onSelectMode={handleSelectMode} />
+          </View>
+        )}
       </View>
 
-      <GameOverModal
-        visible={showGameOverModal && !notice}
-        gameStatus={gameStatus}
-        capturedWhite={capturedWhite}
-        capturedBlack={capturedBlack}
-        onClose={() => {
-          setShowGameOverModal(false);
-          resetGame();
-        }}
-      />
+      {gameMode && (
+        <>
+          <GameOverModal
+            visible={showGameOverModal && !notice}
+            gameStatus={gameStatus}
+            capturedWhite={capturedWhite}
+            capturedBlack={capturedBlack}
+            onClose={() => {
+              setShowGameOverModal(false);
+              resetGame();
+            }}
+          />
 
-      <NoticeModal notice={notice} onClose={() => setNotice(null)} />
+          <NoticeModal notice={notice} onClose={() => setNotice(null)} />
 
-      <PromotionModal
-        visible={!!pendingPromotion}
-        color={pendingPromotion?.color}
-        onSelect={handlePromotionSelect}
-        onCancel={handlePromotionCancel}
-      />
+          <PromotionModal
+            visible={!!pendingPromotion}
+            color={pendingPromotion?.color}
+            onSelect={handlePromotionSelect}
+            onCancel={handlePromotionCancel}
+          />
+        </>
+      )}
     </SafeAreaView>
   );
 };
@@ -510,6 +592,16 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+  },
+  hidden: {
+    opacity: 0,
+  },
+  menu: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
   boardSection: {
     flex: 1,

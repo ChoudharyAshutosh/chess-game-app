@@ -1,4 +1,8 @@
 import * as THREE from 'three';
+import {
+  mergeGeometries,
+  mergeVertices,
+} from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
 export type PieceKind =
   | 'pawn'
@@ -33,8 +37,10 @@ const PIECE_SCALE = 0.9;
 const TALL = 1.38;
 const SLIM = 0.9;
 
-const LATHE_SEGMENTS = 64;
-const PROFILE_POINTS = 60;
+// Pieces are only 40-60 pixels across on a phone, so this much detail already
+// looks perfectly round; more only slows the animation down.
+const LATHE_SEGMENTS = 40;
+const PROFILE_POINTS = 32;
 
 type Profile = [number, number][]; // radius/height pairs from the bottom up
 
@@ -63,7 +69,8 @@ const bead = (radius: number, thickness: number) => {
   const geometry = new THREE.TorusGeometry(
     radius * SLIM,
     thickness,
-    16,
+    // Thin lines are a pixel or two wide and need few sides around the tube.
+    thickness < 0.02 ? 4 : 8,
     LATHE_SEGMENTS,
   );
   geometry.rotateX(Math.PI / 2);
@@ -229,10 +236,9 @@ const addKnightFace = (head: THREE.Mesh, detail: THREE.Material) => {
 // the details on top that identify a piece from above (queen's crown, rook's
 // battlements, bishop's tip). For dark pieces it is lighter than
 // the body so they show. `detail` colours the knight's eyes and mouth.
-export function createPiece(
+function buildPiece(
   symbol: string,
   material: THREE.Material,
-  _col: number,
   accent: THREE.Material = material,
   detail: THREE.Material = accent,
 ): THREE.Group {
@@ -255,7 +261,7 @@ export function createPiece(
       );
       add(group, sharpPart(collar(0.2, 0.05)), material, 0.44);
       addTrim(group, accent, 0.2, 0.44 + 0.05 / 2);
-      add(group, new THREE.SphereGeometry(0.15, 40, 28), material, 0.6);
+      add(group, new THREE.SphereGeometry(0.15, 28, 18), material, 0.6);
       break;
 
     case 'rook':
@@ -425,6 +431,76 @@ export function createPiece(
   fitToSize(group, kind);
   const piece = new THREE.Group();
   piece.add(group);
+  piece.scale.setScalar(PIECE_SCALE);
+  return piece;
+}
+
+// A piece is built from many small parts, but drawing each part separately is
+// slow on phones (hundreds of draw calls per frame). So each piece's parts are
+// merged into one mesh per colour, and the merged shapes are built once per
+// kind of piece and shared by every piece of that kind.
+const ROLES = [
+  new THREE.MeshBasicMaterial(), // body
+  new THREE.MeshBasicMaterial(), // accent
+  new THREE.MeshBasicMaterial(), // detail
+];
+const geometryCache = new Map<string, THREE.BufferGeometry[]>();
+
+// `colours` maps each role (body, accent, detail) to the mesh it is drawn in,
+// so roles that share a material are merged into the same mesh.
+const pieceGeometries = (symbol: string, colours: number[]) => {
+  const key = `${symbol}:${colours.join('')}`;
+  const cached = geometryCache.get(key);
+  if (cached) return cached;
+  const built = buildPiece(symbol, ROLES[0], ROLES[1], ROLES[2]);
+  built.scale.setScalar(1);
+  built.updateMatrixWorld(true);
+  const parts: THREE.BufferGeometry[][] = [];
+  built.traverse(child => {
+    if (!(child instanceof THREE.Mesh)) return;
+    const slot = colours[ROLES.indexOf(child.material)];
+    const source = child.geometry as THREE.BufferGeometry;
+    const part = new THREE.BufferGeometry();
+    part.setAttribute('position', source.getAttribute('position'));
+    part.setAttribute('normal', source.getAttribute('normal'));
+    part.setIndex(source.getIndex());
+    const flat = part.index ? part.toNonIndexed() : part;
+    flat.applyMatrix4(child.matrixWorld);
+    (parts[slot] ??= []).push(flat);
+    source.dispose();
+  });
+  // Seen from above, the top of a piece hides the parts below it. Drawing the
+  // parts from the top down lets the GPU skip those hidden pixels instead of
+  // shading every layer, which roughly halves the work for each piece.
+  const top = (part: THREE.BufferGeometry) => {
+    part.computeBoundingBox();
+    return part.boundingBox!.max.y;
+  };
+  // Corners shared by neighbouring triangles are stored once, so the GPU
+  // processes each only once instead of up to six times.
+  const merged = parts.map(list =>
+    mergeVertices(mergeGeometries([...list].sort((a, b) => top(b) - top(a)))!),
+  );
+  parts.flat().forEach(part => part.dispose());
+  geometryCache.set(key, merged);
+  return merged;
+};
+
+// `accent` colours the thin lines and the details on top; `detail` colours
+// the knight's eyes and mouth. The returned shapes are shared between pieces,
+// so they must not be disposed.
+export function createPiece(
+  symbol: string,
+  material: THREE.Material,
+  accent: THREE.Material = material,
+  detail: THREE.Material = accent,
+): THREE.Group {
+  const materials = [...new Set([material, accent, detail])];
+  const colours = [material, accent, detail].map(m => materials.indexOf(m));
+  const piece = new THREE.Group();
+  pieceGeometries(symbol, colours).forEach((geometry, slot) => {
+    if (geometry) piece.add(new THREE.Mesh(geometry, materials[slot]));
+  });
   piece.scale.setScalar(PIECE_SCALE);
   return piece;
 }
