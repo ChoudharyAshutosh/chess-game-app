@@ -107,3 +107,21 @@ test('arrows show which side of the row has more pieces hidden', () => {
   expect(arrows()).toEqual(['›']);
   act(() => renderer.unmount());
 });
+
+test('the panel shows the mode, and the level against the machine', () => {
+  const panel = (gameMode, machineLevel) =>
+    texts(
+      <ScoreBoard
+        capturedBlack={[]}
+        capturedWhite={[]}
+        currentTurn="white"
+        gameMode={gameMode}
+        machineLevel={machineLevel}
+        gameStatus={{status: 'playing', currentTurn: 'white'}}
+      />,
+    );
+  expect(panel('PvM', 'hard')).toEqual(expect.arrayContaining(['Player vs Machine', 'Hard']));
+  const pvp = panel('PvP');
+  expect(pvp).toContain('Player vs Player');
+  expect(pvp).not.toContain('Hard');
+});

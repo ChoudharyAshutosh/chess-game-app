@@ -1,15 +1,25 @@
 import React from 'react';
-import {View, Text, TouchableOpacity, StyleSheet} from 'react-native';
+import {View, Text, Pressable, StyleSheet} from 'react-native';
 import {MaterialIcons} from '@react-native-vector-icons/material-icons/static';
 import {isGameOver as isFinished} from '../utils/chessUtils';
 
+// Pressable rather than TouchableOpacity: TouchableOpacity animates its own
+// opacity, and on the New Architecture that animation can leave a button
+// looking disabled after it has been enabled again. Here the dimming is worked
+// out from the current props on every render, so it always matches.
 const ControlButton = ({icon, label, onPress, disabled, style, ad}) => (
-  <TouchableOpacity
-    style={[styles.button, style, disabled && styles.disabledButton]}
+  <Pressable
+    style={({pressed}) => [
+      styles.button,
+      style,
+      disabled && styles.disabledButton,
+      pressed && !disabled && styles.pressedButton,
+    ]}
     onPress={onPress}
     disabled={disabled}
-    accessibilityLabel={ad ? `${label}, watch an ad` : label}
-    activeOpacity={0.7}>
+    accessibilityRole="button"
+    accessibilityState={{disabled: !!disabled}}
+    accessibilityLabel={ad ? `${label}, watch an ad` : label}>
     <MaterialIcons name={icon} size={20} color="#fff" />
     <Text style={styles.buttonText}>{label}</Text>
     {ad && (
@@ -18,7 +28,7 @@ const ControlButton = ({icon, label, onPress, disabled, style, ad}) => (
         <Text style={styles.adText}>AD</Text>
       </View>
     )}
-  </TouchableOpacity>
+  </Pressable>
 );
 
 // Three rows, most used first: help during the game (both watch an ad), ending
@@ -151,6 +161,9 @@ const styles = StyleSheet.create({
   },
   disabledButton: {
     opacity: 0.4,
+  },
+  pressedButton: {
+    opacity: 0.7,
   },
   buttonText: {
     color: '#fff',

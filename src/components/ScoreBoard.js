@@ -1,10 +1,36 @@
 import React, {useEffect, useRef, useState} from 'react';
 import {ScrollView, View, Text, StyleSheet} from 'react-native';
+import {MaterialDesignIcons} from '@react-native-vector-icons/material-design-icons/static';
 import ThinkingIndicator from './ThinkingIndicator';
 
 const LEVEL_NAMES = {easy: 'Easy', medium: 'Medium', hard: 'Hard'};
+const LEVEL_COLORS = {easy: '#4CAF50', medium: '#FFB300', hard: '#FF5252'};
 // The taken-pieces row: the panel's colour with a light tint, made solid.
 const STRIP_COLOR = '#151424';
+
+// The game's mode, and the machine's level, across the top of the panel.
+const ModeHeader = ({gameMode, machineLevel}) => {
+  const vsMachine = gameMode === 'PvM';
+  return (
+    <View style={styles.modeHeader}>
+      <MaterialDesignIcons
+        name={vsMachine ? 'robot' : 'account-multiple'}
+        size={15}
+        color="rgba(255, 255, 255, 0.7)"
+      />
+      <Text style={styles.modeText}>
+        {vsMachine ? 'Player vs Machine' : 'Player vs Player'}
+      </Text>
+      {vsMachine && machineLevel ? (
+        <View style={[styles.levelBadge, {borderColor: LEVEL_COLORS[machineLevel]}]}>
+          <Text style={[styles.levelText, {color: LEVEL_COLORS[machineLevel]}]}>
+            {LEVEL_NAMES[machineLevel]}
+          </Text>
+        </View>
+      ) : null}
+    </View>
+  );
+};
 
 // Every taken piece in one swipeable row of a fixed height, so the panel never
 // grows and pushes the board up. It scrolls to show the newest capture, and a
@@ -94,11 +120,12 @@ const ScoreBoard = ({
 
   return (
     <View style={styles.container}>
+      <ModeHeader gameMode={gameMode} machineLevel={machineLevel} />
       <View style={styles.topRow}>
       <View style={styles.playerCard}>
         <View style={[styles.indicator, currentTurn === 'white' && styles.activeIndicator]} />
         <View style={styles.playerInfo}>
-          <Text style={styles.playerLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
+          <Text style={styles.playerLabel} numberOfLines={1}>
             White
           </Text>
         </View>
@@ -135,8 +162,8 @@ const ScoreBoard = ({
       <View style={[styles.playerCard, styles.playerCardRight]}>
         <View style={[styles.indicator, currentTurn === 'black' && styles.activeIndicator]} />
         <View style={styles.playerInfo}>
-          <Text style={styles.playerLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
-            {gameMode === 'PvM' ? `Machine (${LEVEL_NAMES[machineLevel]})` : 'Black'}
+          <Text style={styles.playerLabel} numberOfLines={1}>
+            Black
           </Text>
         </View>
         <View style={styles.scoreContainer}>
@@ -216,6 +243,32 @@ const styles = StyleSheet.create({
   },
   playerInfo: {
     flex: 1,
+  },
+  modeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginBottom: 8,
+  },
+  modeText: {
+    color: 'rgba(255, 255, 255, 0.75)',
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+  },
+  levelBadge: {
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+  },
+  levelText: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
   },
   playerLabel: {
     color: '#fff',
