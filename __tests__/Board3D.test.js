@@ -49,14 +49,16 @@ afterEach(() => {
   jest.restoreAllMocks();
 });
 
-test('shows the 2D board until the 3D board is ready', () => {
+test('shows a spinner, not the 2D board, until the 3D board is ready', () => {
   render();
+  const spinner = () => renderer.root.findAllByProps({testID: 'board3d-loading'});
   expect(webView()).toBeTruthy();
-  expect(renderer.root.findAllByType(ChessBoard)).toHaveLength(1);
+  expect(spinner().length).toBeGreaterThan(0);
+  expect(renderer.root.findAllByType(ChessBoard)).toHaveLength(0);
   expect(WebView.mockInject).not.toHaveBeenCalled();
 
   fromBoard({type: 'ready'});
-  expect(renderer.root.findAllByType(ChessBoard)).toHaveLength(0);
+  expect(spinner()).toHaveLength(0);
   expect(sentStates()).toHaveLength(1);
   expect(sentStates()[0].board).toEqual(BOARD);
 });
@@ -118,6 +120,6 @@ test('marks the king in check', () => {
 test('ignores messages it does not understand', () => {
   render();
   act(() => webView().props.onMessage({nativeEvent: {data: 'not json'}}));
-  expect(renderer.root.findAllByType(ChessBoard)).toHaveLength(1);
+  expect(renderer.root.findAllByProps({testID: 'board3d-loading'}).length).toBeGreaterThan(0);
   expect(onSquarePress).not.toHaveBeenCalled();
 });

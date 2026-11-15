@@ -1,16 +1,21 @@
 import * as THREE from 'three';
-import {RoomEnvironment} from 'three/examples/jsm/environments/RoomEnvironment.js';
-import type {BoardEvent, BoardMoveHint, BoardState} from '../protocol';
-import {assignPieces} from './assign';
-import {createPiece, isWhite, kindOf} from './pieces';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import type { BoardEvent, BoardMoveHint, BoardState } from '../protocol';
+import { assignPieces } from './assign';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { createPiece, isWhite, kindOf } from './pieces';
 
 declare global {
   interface Window {
-    ReactNativeWebView?: {postMessage: (message: string) => void};
+    ReactNativeWebView?: { postMessage: (message: string) => void };
     board3d?: {
       receive: (state: BoardState) => void;
       // Page position of a square's centre, for debugging taps.
-      squareToPage: (row: number, col: number, height?: number) => {x: number; y: number};
+      squareToPage: (
+        row: number,
+        col: number,
+        height?: number,
+      ) => { x: number; y: number };
     };
   }
 }
@@ -44,7 +49,8 @@ const PIECE_SIZE = 0.9;
 // the soft shadow under each piece.
 const SHADOWS = false;
 
-const easeInOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
+const easeInOut = (t: number) =>
+  t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2;
 const easeOut = (t: number) => 1 - (1 - t) ** 3;
 
 // Seeded random numbers, so the wood grain looks the same every time.
@@ -127,17 +133,35 @@ const blobTexture = () => {
   return new THREE.CanvasTexture(canvas);
 };
 
-const labelTexture = (text: string) => {
+// The file letters and rank numbers around the board, drawn on one transparent
+// sheet the size of the frame (9.2 units), each facing the player on its side.
+const labelSheet = () => {
+  const size = 1024;
+  const scale = size / 9.2; // pixels per unit
   const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = 64;
+  canvas.width = canvas.height = size;
   const ctx = canvas.getContext('2d')!;
   ctx.fillStyle = '#e8d5b7';
-  ctx.font = 'bold 40px sans-serif';
+  ctx.font = `bold ${Math.round(0.36 * scale * 0.62)}px sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(text, 32, 34);
+  // x and z are board units; the sheet lies flat with -z at the top.
+  const draw = (text: string, x: number, z: number, facingBlack: boolean) => {
+    ctx.save();
+    ctx.translate((x + 4.6) * scale, (z + 4.6) * scale);
+    if (facingBlack) ctx.rotate(Math.PI);
+    ctx.fillText(text, 0, 0.02 * scale);
+    ctx.restore();
+  };
+  for (let i = 0; i < 8; i++) {
+    draw('abcdefgh'[i], i - 3.5, 4.3, false);
+    draw(String(8 - i), -4.3, i - 3.5, false);
+    draw('abcdefgh'[i], i - 3.5, -4.3, true);
+    draw(String(8 - i), 4.3, i - 3.5, true);
+  }
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 4;
   return texture;
 };
 
@@ -151,8 +175,8 @@ interface PieceObject {
   row: number;
   col: number;
   group: THREE.Group;
-  material: THREE.MeshStandardMaterial;
-  extras: THREE.MeshStandardMaterial[]; // line and detail colours
+  material: THREE.MeshMatcapMaterial;
+  extras: THREE.MeshMatcapMaterial[]; // line and detail colours
   blob: THREE.Mesh;
   from: THREE.Vector3;
   to: THREE.Vector3;
@@ -167,20 +191,21 @@ interface PieceObject {
 function start() {
   let renderer: THREE.WebGLRenderer;
   try {
-    renderer = new THREE.WebGLRenderer({antialias: true, alpha: true});
+    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   } catch (e) {
-    send({type: 'unsupported', reason: String(e)});
+    send({ type: 'unsupported', reason: String(e) });
     return;
   }
-  // Full screen sharpness, so small details on the pieces stay crisp.
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 3));
+  // Sharp enough for the pieces' details; drawing at the full 3x of some
+  // phones costs over twice the work for no visible gain and makes moves stutter.
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.setClearColor(0x000000, 0);
   renderer.toneMapping = THREE.NeutralToneMapping;
   renderer.shadowMap.enabled = SHADOWS;
   renderer.shadowMap.type = THREE.PCFShadowMap;
   document.body.appendChild(renderer.domElement);
   renderer.domElement.addEventListener('webglcontextlost', () =>
-    send({type: 'unsupported', reason: 'WebGL context lost'}),
+    send({ type: 'unsupported', reason: 'WebGL context lost' }),
   );
 
   const scene = new THREE.Scene();
@@ -188,6 +213,11 @@ function start() {
   // the same from both sides, like a real board on a table between two players.
   // A natural lens lets the pieces show their sides towards the edges.
   const camera = new THREE.PerspectiveCamera(34, 1, 1, 200);
+  // Looking straight down, with black's side at the top of the screen. Only
+  // the distance changes with the screen size (see resize).
+  camera.up.set(0, 0, -1);
+  camera.position.set(0, 20, 0);
+  camera.lookAt(0, 0, 0);
 
   // Soft studio reflections on the pieces, plus one high light for short shadows.
   const pmrem = new THREE.PMREMGenerator(renderer);
@@ -221,65 +251,83 @@ function start() {
   frameTexture.repeat.set(2, 2);
   const frame = new THREE.Mesh(
     new THREE.BoxGeometry(9.2, 0.34, 9.2),
-    new THREE.MeshStandardMaterial({map: frameTexture, roughness: 0.45}),
+    new THREE.MeshStandardMaterial({ map: frameTexture, roughness: 0.45 }),
   );
   frame.position.y = -0.2;
   frame.receiveShadow = true;
   scene.add(frame);
-  const labelGeometry = new THREE.PlaneGeometry(0.36, 0.36);
   // Letters and numbers on both edges, like a real board, each set facing the
-  // player sitting on that side.
-  const addLabel = (text: string, x: number, z: number, facingBlack: boolean) => {
-    const label = new THREE.Mesh(
-      labelGeometry,
-      new THREE.MeshBasicMaterial({map: labelTexture(text), transparent: true, opacity: 0.75}),
-    );
-    label.rotation.x = -Math.PI / 2;
-    if (facingBlack) label.rotation.z = Math.PI;
-    label.position.set(x, -0.025, z);
-    scene.add(label);
-  };
-  for (let i = 0; i < 8; i++) {
-    addLabel('abcdefgh'[i], squareX(i), 4.3, false);
-    addLabel(String(8 - i), -4.3, squareZ(i), false);
-    addLabel('abcdefgh'[i], squareX(i), -4.3, true);
-    addLabel(String(8 - i), 4.3, squareZ(i), true);
-  }
+  // player sitting on that side. All are drawn on one sheet over the frame.
+  const labels = new THREE.Mesh(
+    new THREE.PlaneGeometry(9.2, 9.2),
+    new THREE.MeshBasicMaterial({
+      map: labelSheet(),
+      transparent: true,
+      opacity: 0.75,
+    }),
+  );
+  labels.rotation.x = -Math.PI / 2;
+  labels.position.y = -0.025;
+  scene.add(labels);
 
   const squareGeometry = new THREE.BoxGeometry(1, 0.1, 1);
   const variants = (base: string, grain: string) => {
     const texture = woodTexture(base, grain);
-    return Array.from({length: 4}, (_, i) => {
+    return Array.from({ length: 4 }, (_, i) => {
       const map = texture.clone();
       map.offset.set(i * 0.37, i * 0.21);
       map.rotation = i % 2 === 0 ? 0 : Math.PI / 2;
-      return new THREE.MeshStandardMaterial({map, roughness: 0.5});
+      return new THREE.MeshStandardMaterial({ map, roughness: 0.5 });
     });
   };
   // Light squares are a warm maple, a little deeper than the ivory pieces so
   // white pieces stand out on them.
   const lightMaterials = variants('#cfae7c', '#a07a48');
   const darkMaterials = variants('#8b5a35', '#4f2f17');
-  const squares: THREE.Mesh[] = [];
+  // Squares sharing a material are merged into one mesh, so the whole board
+  // takes a handful of draw calls instead of 64.
+  const squaresByMaterial = new Map<THREE.Material, THREE.BufferGeometry[]>();
   for (let row = 0; row < 8; row++) {
     for (let col = 0; col < 8; col++) {
       const materials = (row + col) % 2 === 0 ? lightMaterials : darkMaterials;
-      const square = new THREE.Mesh(squareGeometry, materials[(row * 3 + col) % 4]);
-      square.position.set(squareX(col), -0.05, squareZ(row));
-      square.receiveShadow = true;
-      square.userData = {row, col};
-      scene.add(square);
-      squares.push(square);
+      const material = materials[(row * 3 + col) % 4];
+      const square = squareGeometry.clone();
+      square.translate(squareX(col), -0.05, squareZ(row));
+      if (!squaresByMaterial.has(material)) squaresByMaterial.set(material, []);
+      squaresByMaterial.get(material)!.push(square);
     }
   }
+  squaresByMaterial.forEach((list, material) => {
+    const mesh = new THREE.Mesh(mergeGeometries(list)!, material);
+    mesh.receiveShadow = true;
+    scene.add(mesh);
+    list.forEach(square => square.dispose());
+  });
+  squareGeometry.dispose();
+  const boardPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+  // The square at a point on the board, if any.
+  const squareAt = (point: THREE.Vector3) => {
+    const col = Math.floor(point.x + 4);
+    const row = Math.floor(point.z + 4);
+    return row >= 0 && row < 8 && col >= 0 && col < 8 ? { row, col } : null;
+  };
   const blobMap = blobTexture();
   const blobGeometry = new THREE.PlaneGeometry(0.95, 0.95);
 
   // One highlight of each kind per square, shown and hidden as needed.
-  const makeOverlay = (geometry: THREE.BufferGeometry, color: number, opacity: number) => {
+  const makeOverlay = (
+    geometry: THREE.BufferGeometry,
+    color: number,
+    opacity: number,
+  ) => {
     const mesh = new THREE.Mesh(
       geometry,
-      new THREE.MeshBasicMaterial({color, transparent: true, opacity, depthWrite: false}),
+      new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity,
+        depthWrite: false,
+      }),
     );
     mesh.rotation.x = -Math.PI / 2;
     mesh.visible = false;
@@ -289,8 +337,9 @@ function start() {
   const tile = new THREE.PlaneGeometry(0.98, 0.98);
   const dot = new THREE.CircleGeometry(0.15, 32);
   const ring = new THREE.RingGeometry(0.36, 0.46, 40);
-  const overlays = squares.map(square => {
-    const {row, col} = square.userData as {row: number; col: number};
+  const overlays = Array.from({ length: 64 }, (_, index) => {
+    const row = Math.floor(index / 8);
+    const col = index % 8;
     const place = (mesh: THREE.Mesh, y: number) => {
       mesh.position.set(squareX(col), y, squareZ(row));
       return mesh;
@@ -309,40 +358,130 @@ function start() {
   let lastMoveKey = '';
   let validTargets = new Set<number>(); // row * 8 + col of the selected piece's moves
 
-  const createPieceObject = (symbol: string, row: number, col: number, appear: boolean) => {
-    const material = new THREE.MeshStandardMaterial({
-      color: isWhite(symbol) ? COLORS.whitePiece : COLORS.blackPiece,
-      roughness: isWhite(symbol) ? 0.3 : 0.16,
-      metalness: 0,
-      transparent: true,
+  // The pieces' polished look (studio reflections, two lights, the edge sheen
+  // and shade) is too slow to work out for every pixel on budget phones: it
+  // halved the frame rate. The camera and lights never move, so each look
+  // depends only on which way the surface faces. It is worked out once, on a
+  // ball, into a small "matcap" picture that the pieces then simply look up.
+  const bakeMatcap = (material: THREE.Material) => {
+    const size = 256;
+    const gl = renderer.getContext();
+    // Half floats keep the brightest highlights for the tone mapping later.
+    const floats =
+      !!gl.getExtension('EXT_color_buffer_float') ||
+      !!gl.getExtension('EXT_color_buffer_half_float');
+    const target = new THREE.WebGLRenderTarget(size, size, {
+      type: floats ? THREE.HalfFloatType : THREE.UnsignedByteType,
+      depthBuffer: true,
     });
-    if (!isWhite(symbol)) {
-      // Polished like ebony: crisp highlights along every ridge and rim show
-      // the black pieces' shape, which their dark colour would otherwise hide.
-      material.envMapIntensity = 1.6;
-      addEdgeSheen(material);
-    } else {
-      addEdgeShade(material);
-    }
-    const accent = isWhite(symbol)
-      ? material
-      : new THREE.MeshStandardMaterial({
-          color: COLORS.blackLine,
-          roughness: 0.6,
-          metalness: 0,
-          transparent: true,
-        });
-    const detail = isWhite(symbol)
-      ? new THREE.MeshStandardMaterial({
-          color: COLORS.whiteDetail,
-          roughness: 0.5,
-          transparent: true,
-        })
-      : accent;
-    const group = createPiece(symbol, material, col, accent, detail);
+    // Matcap lookups reach 0.495 from the centre; the ball is drawn slightly
+    // bigger so its very edge never samples the empty background.
+    const extent = 1.0101 / 1.03;
+    const view = new THREE.OrthographicCamera(
+      -extent,
+      extent,
+      extent,
+      -extent,
+      1,
+      200,
+    );
+    view.quaternion.copy(camera.quaternion);
+    view.position.set(0, 0, 100).applyQuaternion(camera.quaternion);
+    view.layers.set(1);
+    const ball = new THREE.Mesh(new THREE.SphereGeometry(1, 128, 64), material);
+    ball.layers.set(1);
+    scene.add(ball);
+    scene.traverse(object => {
+      if ((object as THREE.Light).isLight) object.layers.enable(1);
+    });
+    const clearColor = renderer.getClearColor(new THREE.Color());
+    const clearAlpha = renderer.getClearAlpha();
+    renderer.setRenderTarget(target);
+    renderer.setClearColor(0x000000, 0);
+    renderer.clear();
+    renderer.render(scene, view);
+    renderer.setRenderTarget(null);
+    renderer.setClearColor(clearColor, clearAlpha);
+    scene.remove(ball);
+    ball.geometry.dispose();
+    material.dispose();
+    return target.texture;
+  };
+
+  const pieceLooks = (() => {
+    const white = new THREE.MeshStandardMaterial({
+      color: COLORS.whitePiece,
+      roughness: 0.3,
+      metalness: 0,
+    });
+    addEdgeShade(white);
+    // Polished like ebony: crisp highlights along every ridge and rim show
+    // the black pieces' shape, which their dark colour would otherwise hide.
+    const black = new THREE.MeshStandardMaterial({
+      color: COLORS.blackPiece,
+      roughness: 0.16,
+      metalness: 0,
+      envMapIntensity: 1.6,
+    });
+    addEdgeSheen(black);
+    const blackLine = new THREE.MeshStandardMaterial({
+      color: COLORS.blackLine,
+      roughness: 0.6,
+      metalness: 0,
+    });
+    const whiteDetail = new THREE.MeshStandardMaterial({
+      color: COLORS.whiteDetail,
+      roughness: 0.5,
+      metalness: 0,
+    });
+    const looks = { white, black, blackLine, whiteDetail };
+    return Object.fromEntries(
+      Object.entries(looks).map(([name, material]) => [
+        name,
+        bakeMatcap(material),
+      ]),
+    ) as Record<keyof typeof looks, THREE.Texture>;
+  })();
+
+  // A red glow added on top of a piece's look, for the king in check.
+  const addGlow = (material: THREE.MeshMatcapMaterial) => {
+    const glow = { value: new THREE.Color(0, 0, 0) };
+    material.userData.glow = glow.value;
+    material.onBeforeCompile = shader => {
+      shader.uniforms.glow = glow;
+      shader.fragmentShader = shader.fragmentShader
+        .replace('void main() {', 'uniform vec3 glow;\nvoid main() {')
+        .replace(
+          '#include <opaque_fragment>',
+          'outgoingLight += glow;\n#include <opaque_fragment>',
+        );
+    };
+  };
+  const glowOf = (piece: PieceObject) =>
+    piece.material.userData.glow as THREE.Color;
+
+  const createPieceObject = (
+    symbol: string,
+    row: number,
+    col: number,
+    appear: boolean,
+  ) => {
+    const look = (matcap: THREE.Texture) =>
+      new THREE.MeshMatcapMaterial({ matcap, transparent: true });
+    const material = look(
+      isWhite(symbol) ? pieceLooks.white : pieceLooks.black,
+    );
+    addGlow(material);
+    const accent = isWhite(symbol) ? material : look(pieceLooks.blackLine);
+    const detail = isWhite(symbol) ? look(pieceLooks.whiteDetail) : accent;
+    const group = createPiece(symbol, material, accent, detail);
     const blob = new THREE.Mesh(
       blobGeometry,
-      new THREE.MeshBasicMaterial({map: blobMap, transparent: true, depthWrite: false}),
+      new THREE.MeshBasicMaterial({
+        map: blobMap,
+        transparent: true,
+        depthWrite: false,
+      }),
     );
     blob.rotation.x = -Math.PI / 2;
     blob.position.set(squareX(col), 0.002, squareZ(row));
@@ -387,9 +526,13 @@ function start() {
     piece.from.y = 0;
     piece.to.set(squareX(col), 0, squareZ(row));
     piece.moveStart = performance.now();
-    piece.moveMs = Math.min(BASE_MOVE_MS + distance * MOVE_MS_PER_SQUARE, MAX_MOVE_MS);
+    piece.moveMs = Math.min(
+      BASE_MOVE_MS + distance * MOVE_MS_PER_SQUARE,
+      MAX_MOVE_MS,
+    );
     // Pieces glide just above the board; knights hop, since they jump over pieces.
-    piece.arc = kindOf(piece.symbol) === 'knight' ? 0.55 : 0.12 + distance * 0.02;
+    piece.arc =
+      kindOf(piece.symbol) === 'knight' ? 0.55 : 0.12 + distance * 0.02;
   };
 
   const startMoveHint = (moving: BoardMoveHint | null) => {
@@ -400,16 +543,19 @@ function start() {
     lastMoveKey = key;
     if (!moving) return;
     const piece = pieces.find(
-      p => p.removeStart === null && p.row === moving.fromRow && p.col === moving.fromCol,
+      p =>
+        p.removeStart === null &&
+        p.row === moving.fromRow &&
+        p.col === moving.fromCol,
     );
     if (piece) moveTo(piece, moving.toRow, moving.toCol);
   };
 
   const syncBoard = (board: string[][]) => {
     const living = pieces.filter(p => p.removeStart === null);
-    const {moves, removed, added} = assignPieces(living, board);
+    const { moves, removed, added } = assignPieces(living, board);
     const byId = new Map(living.map(p => [p.id, p]));
-    moves.forEach(({id, row, col}) => moveTo(byId.get(id)!, row, col));
+    moves.forEach(({ id, row, col }) => moveTo(byId.get(id)!, row, col));
     const now = performance.now();
     removed.forEach(id => {
       const piece = byId.get(id)!;
@@ -422,7 +568,9 @@ function start() {
         ? Math.max(0, attacker.moveStart + attacker.moveMs * 0.6 - now)
         : 0;
     });
-    added.forEach(({symbol, row, col}) => createPieceObject(symbol, row, col, true));
+    added.forEach(({ symbol, row, col }) =>
+      createPieceObject(symbol, row, col, true),
+    );
   };
 
   const receive = (state: BoardState) => {
@@ -438,18 +586,26 @@ function start() {
       const row = Math.floor(index / 8);
       const col = index % 8;
       overlay.selected.visible =
-        !!state.selected && state.selected.row === row && state.selected.col === col;
+        !!state.selected &&
+        state.selected.row === row &&
+        state.selected.col === col;
       overlay.move.visible = valid.has(index) && !occupied.has(index);
       overlay.capture.visible = valid.has(index) && occupied.has(index);
       overlay.check.visible =
-        !!state.checkedKing && state.checkedKing.row === row && state.checkedKing.col === col;
+        !!state.checkedKing &&
+        state.checkedKing.row === row &&
+        state.checkedKing.col === col;
     });
 
     const king = state.checkedKing
-      ? living.find(p => p.row === state.checkedKing!.row && p.col === state.checkedKing!.col)
+      ? living.find(
+          p =>
+            p.row === state.checkedKing!.row &&
+            p.col === state.checkedKing!.col,
+        )
       : undefined;
     // Only the selected piece's square is highlighted; the piece keeps its colour.
-    pieces.forEach(p => p.material.emissive.setHex(0x000000));
+    pieces.forEach(p => glowOf(p).setRGB(0, 0, 0));
     checkedKingId = king ? king.id : null;
     requestRender();
   };
@@ -468,11 +624,14 @@ function start() {
     let busy = false;
 
     pieces = pieces.filter(piece => {
-      const {group, blob} = piece;
+      const { group, blob } = piece;
       const blobMaterial = blob.material as THREE.MeshBasicMaterial;
 
       // Glide from square to square along a low arc.
-      const t = piece.moveMs > 0 ? Math.min((now - piece.moveStart) / piece.moveMs, 1) : 1;
+      const t =
+        piece.moveMs > 0
+          ? Math.min((now - piece.moveStart) / piece.moveMs, 1)
+          : 1;
       const eased = easeInOut(t);
       group.position.lerpVectors(piece.from, piece.to, eased);
       const hop = t < 1 ? Math.sin(Math.PI * eased) * piece.arc : 0;
@@ -509,10 +668,8 @@ function start() {
           piece.extras.forEach(extra => (extra.opacity = 1 - removeT));
           blobMaterial.opacity = 1 - removeT;
           if (removeT >= 1) {
+            // The piece's shapes are shared with other pieces, so they stay.
             scene.remove(group, blob);
-            group.traverse(child => {
-              if (child instanceof THREE.Mesh) child.geometry.dispose();
-            });
             piece.material.dispose();
             piece.extras.forEach(extra => extra.dispose());
             blobMaterial.dispose();
@@ -529,7 +686,7 @@ function start() {
       if (king) {
         busy = true;
         const glow = 0.35 + 0.25 * Math.sin(now / 180);
-        king.material.emissive.setRGB(glow, 0, 0);
+        glowOf(king).setRGB(glow, 0, 0);
       }
     }
 
@@ -571,24 +728,30 @@ function start() {
       -((event.clientY - rect.top) / rect.height) * 2 + 1,
     );
     raycaster.setFromCamera(pointer, camera);
-    const squareHit = raycaster.intersectObjects(squares, false)[0];
-    const square = squareHit
-      ? (squareHit.object.userData as {row: number; col: number})
-      : null;
+    const boardPoint = raycaster.ray.intersectPlane(
+      boardPlane,
+      new THREE.Vector3(),
+    );
+    const square = boardPoint ? squareAt(boardPoint) : null;
     if (square && validTargets.has(square.row * 8 + square.col)) {
-      send({type: 'press', row: square.row, col: square.col});
+      send({ type: 'press', row: square.row, col: square.col });
       return;
     }
-    const pieceGroups = pieces.filter(p => p.removeStart === null).map(p => p.group);
+    const pieceGroups = pieces
+      .filter(p => p.removeStart === null)
+      .map(p => p.group);
     const pieceHit = raycaster.intersectObjects(pieceGroups, true)[0];
     const pieceId = pieceHit?.object.userData.pieceId as number | undefined;
-    const piece = pieceId !== undefined ? pieces.find(p => p.id === pieceId) : undefined;
-    const target = piece ? {row: piece.row, col: piece.col} : square;
-    if (target) send({type: 'press', row: target.row, col: target.col});
+    const piece =
+      pieceId !== undefined ? pieces.find(p => p.id === pieceId) : undefined;
+    const target = piece ? { row: piece.row, col: piece.col } : square;
+    if (target) send({ type: 'press', row: target.row, col: target.col });
   });
 
   const squareToPage = (row: number, col: number, height = 0) => {
-    const point = new THREE.Vector3(squareX(col), height, squareZ(row)).project(camera);
+    const point = new THREE.Vector3(squareX(col), height, squareZ(row)).project(
+      camera,
+    );
     const rect = renderer.domElement.getBoundingClientRect();
     return {
       x: rect.left + ((point.x + 1) / 2) * rect.width,
@@ -596,9 +759,9 @@ function start() {
     };
   };
 
-  window.board3d = {receive, squareToPage};
+  window.board3d = { receive, squareToPage };
   renderer.render(scene, camera);
-  send({type: 'ready'});
+  send({ type: 'ready' });
 }
 
 start();
