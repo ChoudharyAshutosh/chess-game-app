@@ -9,6 +9,7 @@ const COLORS = {
   light: '#E8D5B7',
   dark: '#A67C52',
   highlight: '#7FC97F',
+  hint: '#4DD0E1', // the suggested move's squares
   selected: '#FFD700',
   validMove: '#98FB98',
 };
@@ -107,12 +108,14 @@ const Square = ({
   isMovingPiece,
   isSourcePiece,
   isKingInCheck,
+  isHint,
 }) => {
   const isLight = (row + col) % 2 === 0;
 
   const getBackgroundColor = () => {
     if (isSelected) return COLORS.selected;
     if (isValidMove) return COLORS.validMove;
+    if (isHint) return COLORS.hint;
     return isLight ? COLORS.light : COLORS.dark;
   };
 

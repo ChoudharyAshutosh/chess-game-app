@@ -5,7 +5,9 @@
 import React from 'react';
 import ReactTestRenderer from 'react-test-renderer';
 import App from '../App';
+import {Text} from 'react-native';
 import {
+  HintBanner,
   Board3D,
   GameModeSelection,
   GameOverModal,
@@ -442,5 +444,180 @@ describe('player vs machine', () => {
     expect(at('e4')).toBe('');
     expect(at('e2')).toBe('♙');
     expect(gameStatus().currentTurn).toBe('white');
+  });
+});
+
+describe('hint', () => {
+  const E2E4 = {from: {row: 6, col: 4}, to: {row: 4, col: 4}};
+  const D2D4 = {from: {row: 6, col: 3}, to: {row: 4, col: 3}};
+  let onDepth;
+  let stopSearch;
+  let ad;
+
+  beforeEach(() => {
+    stopSearch = jest.fn();
+    jest.spyOn(chessUtils, 'searchHint').mockImplementation((_state, callback) => {
+      onDepth = callback;
+      return stopSearch;
+    });
+    showRewardedAd.mockImplementation(callbacks => {
+      ad = callbacks;
+      return 'started';
+    });
+  });
+
+  const hintShown = () => renderer.root.findByType(Board3D).props.hint;
+  const bannerText = () => {
+    const [banner] = renderer.root.findAllByType(HintBanner);
+    if (!banner) return null;
+    // The sentence is one Text with nested Texts for the bold parts.
+    const flatten = node =>
+      typeof node === 'string' ? node : node.children.map(flatten).join('');
+    return flatten(banner.findAllByType(Text)[0]);
+  };
+  const askForHint = () => act(() => controls().onHint());
+
+  test('shows the move found while the ad played', async () => {
+    await start('PvP');
+    askForHint();
+    act(() => onDepth(E2E4, 3));
+    expect(hintShown()).toBeNull(); // not before the ad has finished
+    act(() => ad.onReward());
+    expect(hintShown()).toMatchObject(E2E4);
+    expect(stopSearch).toHaveBeenCalled();
+  });
+
+  test('shows the deepest move found', async () => {
+    await start('PvP');
+    askForHint();
+    act(() => onDepth(E2E4, 3));
+    act(() => onDepth(D2D4, 4));
+    act(() => ad.onReward());
+    expect(hintShown()).toMatchObject(D2D4);
+  });
+
+  test('waits, saying so, if the ad ends before a move is found', async () => {
+    await start('PvP');
+    askForHint();
+    act(() => ad.onReward());
+    expect(hintShown()).toBeNull();
+    expect(bannerText()).toBe('Finding the best move for White…');
+    expect(controls().canHint).toBe(false);
+    act(() => onDepth(E2E4, 3));
+    expect(hintShown()).toMatchObject(E2E4);
+    expect(bannerText()).toBe('Hint for White: move the Pawn from e2 to e4');
+  });
+
+  test('names the side the hint is for', async () => {
+    await start('PvP');
+    move('e2e4');
+    askForHint();
+    act(() => onDepth({from: {row: 0, col: 6}, to: {row: 2, col: 5}}, 3));
+    act(() => ad.onReward());
+    expect(bannerText()).toBe('Hint for Black: move the Knight from g8 to f6');
+  });
+
+  test('the game is paused until the hint is shown', async () => {
+    await start('PvP');
+    askForHint();
+    tap('e2');
+    expect(renderer.root.findByType(Board3D).props.selectedSquare).toBeNull();
+    expect(controls().canUndo).toBe(false);
+    expect(controls().canOfferDraw).toBe(false);
+    act(() => controls().onResign());
+    expect(notice()).toBeNull();
+    act(() => onDepth(E2E4, 3));
+    act(() => ad.onReward());
+    tap('e2');
+    expect(renderer.root.findByType(Board3D).props.selectedSquare).toEqual({row: 6, col: 4});
+  });
+
+  test('closing the ad early shows no hint', async () => {
+    await start('PvP');
+    askForHint();
+    act(() => onDepth(E2E4, 3));
+    act(() => ad.onCancel());
+    expect(hintShown()).toBeNull();
+    expect(notice().title).toBe('Ad cancelled');
+    expect(stopSearch).toHaveBeenCalled();
+  });
+
+  test('tells an offline player to connect', async () => {
+    showRewardedAd.mockReturnValue('offline');
+    await start('PvP');
+    askForHint();
+    expect(notice().title).toBe('No internet');
+    expect(stopSearch).toHaveBeenCalled();
+  });
+
+  test('disappears once a move is played, and can be asked for again', async () => {
+    await start('PvP');
+    askForHint();
+    act(() => onDepth(E2E4, 3));
+    act(() => ad.onReward());
+    move('e2e4');
+    expect(hintShown()).toBeNull();
+    expect(controls().canHint).toBe(true);
+    askForHint();
+    expect(showRewardedAd).toHaveBeenCalledTimes(2);
+  });
+
+  test('the suggested piece can be selected and moved', async () => {
+    await start('PvP');
+    askForHint();
+    act(() => onDepth(E2E4, 3));
+    act(() => ad.onReward());
+    tap('e2');
+    expect(renderer.root.findByType(Board3D).props.selectedSquare).toEqual({row: 6, col: 4});
+    tap('e4');
+    act(() => {
+      jest.advanceTimersByTime(300);
+    });
+    expect(at('e4')).toBe('♙');
+    expect(hintShown()).toBeNull();
+  });
+
+  test('asks to play the move, and plays it on yes', async () => {
+    await start('PvP');
+    askForHint();
+    act(() => onDepth(E2E4, 3));
+    act(() => ad.onReward());
+    const banner = renderer.root.findByType(HintBanner);
+    expect(banner.props.asking).toBe(true);
+    act(() => banner.props.onPlay());
+    act(() => {
+      jest.advanceTimersByTime(300);
+    });
+    expect(at('e4')).toBe('♙');
+    expect(at('e2')).toBe('');
+    expect(gameStatus().currentTurn).toBe('black');
+    expect(renderer.root.findAllByType(HintBanner)).toHaveLength(0);
+  });
+
+  test('on no, keeps the hint for the player to play themselves', async () => {
+    await start('PvP');
+    askForHint();
+    act(() => onDepth(E2E4, 3));
+    act(() => ad.onReward());
+    act(() => renderer.root.findByType(HintBanner).props.onDismiss());
+    expect(renderer.root.findByType(HintBanner).props.asking).toBe(false);
+    expect(hintShown()).toMatchObject(E2E4);
+    expect(at('e2')).toBe('♙');
+  });
+
+  test('falls back to searching in the app if the 3D search is lost', async () => {
+    await start('PvP');
+    askForHint();
+    act(() => onDepth(null, -1));
+    expect(chessUtils.searchHint).toHaveBeenCalledTimes(2);
+    act(() => onDepth(E2E4, 3));
+    act(() => ad.onReward());
+    expect(hintShown()).toMatchObject(E2E4);
+  });
+
+  test('is unavailable while the machine is thinking', async () => {
+    await start('PvM');
+    move('e2e4');
+    expect(controls().canHint).toBe(false);
   });
 });

@@ -1,6 +1,8 @@
 import React, {
+  forwardRef,
   useCallback,
   useEffect,
+  useImperativeHandle,
   useMemo,
   useRef,
   useState,
@@ -10,6 +12,7 @@ import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 import ChessBoard from './ChessBoard';
 import boardHtml from '../board3d/boardHtml.generated';
 import type { BoardEvent, BoardState } from '../board3d/protocol';
+import type { GameState, Move } from '../types/chess';
 import type { Board, GameStatus, SquarePosition } from '../types/chess';
 
 interface MovingPiece {
@@ -27,6 +30,7 @@ interface Board3DProps {
   onSquarePress: (row: number, col: number) => void;
   movingPiece: MovingPiece | null;
   gameStatus: GameStatus;
+  hint?: { from: SquarePosition; to: SquarePosition } | null;
 }
 
 const KING_OF: Record<string, string> = { white: '♔', black: '♚' };
@@ -54,10 +58,21 @@ const findCheckedKing = (
   return null;
 };
 
+// Called with the best move after each finished depth of a hint search. A
+// depth of -1 means the search was lost (the 3D page crashed or reloaded).
+export type HintListener = (move: Move | null, depth: number) => void;
+
+export interface Board3DHandle {
+  // Searches for a hint inside the 3D board's page, which keeps running while
+  // an ad covers the app. Returns a function that stops the search, or null
+  // when the 3D board isn't running, so the caller searches by itself.
+  findHint: (state: GameState, onDepth: HintListener) => (() => void) | null;
+}
+
 // Draws the board in 3D (three.js inside a WebView). It fades in once loaded,
 // with a spinner until then. The flat 2D board is used only if the phone can't
 // draw 3D graphics.
-const Board3D = (props: Board3DProps) => {
+const Board3D = forwardRef<Board3DHandle, Board3DProps>((props, ref) => {
   const {
     board,
     selectedSquare,
@@ -65,12 +80,47 @@ const Board3D = (props: Board3DProps) => {
     onSquarePress,
     movingPiece,
     gameStatus,
+    hint = null,
   } = props;
   const webViewRef = useRef<WebViewHandle>(null);
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
   const lastSentRef = useRef('');
   const fadeIn = useRef(new Animated.Value(0)).current;
+  const hintListenersRef = useRef(new Map<number, HintListener>());
+  const nextHintIdRef = useRef(1);
+  const runningRef = useRef(false);
+  runningRef.current = ready && !failed;
+
+  // Searches cut off by a crash or reload never finish; tell their callers.
+  const loseHintSearches = useCallback(() => {
+    const listeners = [...hintListenersRef.current.values()];
+    hintListenersRef.current.clear();
+    listeners.forEach(listener => listener(null, -1));
+  }, []);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      findHint: (state, onDepth) => {
+        if (!runningRef.current) return null;
+        const id = nextHintIdRef.current++;
+        hintListenersRef.current.set(id, onDepth);
+        webViewRef.current?.injectJavaScript(
+          `window.board3d && window.board3d.findHint(${id}, ${JSON.stringify(
+            state,
+          )}); true;`,
+        );
+        return () => {
+          if (!hintListenersRef.current.delete(id)) return;
+          webViewRef.current?.injectJavaScript(
+            'window.board3d && window.board3d.stopHint(); true;',
+          );
+        };
+      },
+    }),
+    [],
+  );
 
   const onSquarePressRef = useRef(onSquarePress);
   useEffect(() => {
@@ -91,9 +141,10 @@ const Board3D = (props: Board3DProps) => {
             toCol: movingPiece.toCol,
           }
         : null,
+      hint: hint ? { from: hint.from, to: hint.to } : null,
     };
     return JSON.stringify(state);
-  }, [board, selectedSquare, validMoves, movingPiece, gameStatus]);
+  }, [board, selectedSquare, validMoves, movingPiece, gameStatus, hint]);
 
   const sendState = useCallback((json: string) => {
     lastSentRef.current = json;
@@ -120,6 +171,7 @@ const Board3D = (props: Board3DProps) => {
       if (message.type === 'ready') {
         // Also sent again if the page reloads, which loses the position.
         sendState(stateJsonRef.current);
+        loseHintSearches();
         setReady(true);
         Animated.timing(fadeIn, {
           toValue: 1,
@@ -134,17 +186,25 @@ const Board3D = (props: Board3DProps) => {
         setFailed(true);
       } else if (message.type === 'press') {
         onSquarePressRef.current(message.row, message.col);
+      } else if (message.type === 'hint') {
+        hintListenersRef.current.get(message.id)?.(
+          message.move as Move | null,
+          message.depth,
+        );
       }
     },
-    [sendState, fadeIn],
+    [sendState, fadeIn, loseHintSearches],
   );
 
   const fail = useCallback(() => setFailed(true), []);
+  useEffect(() => {
+    if (failed) loseHintSearches();
+  }, [failed, loseHintSearches]);
 
   if (failed) {
     return (
       <View style={styles.container}>
-        <ChessBoard {...props} />
+        <ChessBoard {...props} hint={hint} />
       </View>
     );
   }
@@ -183,7 +243,7 @@ const Board3D = (props: Board3DProps) => {
       )}
     </View>
   );
-};
+});
 
 const styles = StyleSheet.create({
   container: {
@@ -210,5 +270,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
 });
+
+Board3D.displayName = 'Board3D';
 
 export default Board3D;

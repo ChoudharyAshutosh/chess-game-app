@@ -13,6 +13,9 @@ import {
   getBestMove,
   searchBestMove,
   searchMoveForLevel,
+  searchHint,
+  HINT_MIN_DEPTH,
+  HINT_MAX_DEPTH,
   getMoveForLevel,
   MACHINE_LEVELS,
   shouldAcceptDraw,
@@ -467,5 +470,41 @@ describe('machine levels', () => {
       jest.runAllTimers();
       expect(onDone).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('searchHint', () => {
+  // White mates with Ra8 (back-rank mate).
+  const BACK_RANK = '6k1/5ppp/8/8/8/8/8/R5K1 w - - 0 1';
+
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => jest.useRealTimers());
+
+  test('reports a move at each depth, deeper than the Hard level', () => {
+    const onDepth = jest.fn();
+    searchHint(fenToState(BACK_RANK), onDepth);
+    jest.runAllTimers();
+    const depths = onDepth.mock.calls.map(([, depth]) => depth);
+    expect(depths[0]).toBe(HINT_MIN_DEPTH);
+    expect(depths[depths.length - 1]).toBe(HINT_MAX_DEPTH);
+    expect(HINT_MAX_DEPTH).toBeGreaterThan(3); // Hard searches depth 3.
+  });
+
+  test('suggests the winning move', () => {
+    const onDepth = jest.fn();
+    searchHint(fenToState(BACK_RANK), onDepth);
+    jest.runAllTimers();
+    for (const [move] of onDepth.mock.calls) {
+      expect(move.from).toEqual({row: 7, col: 0});
+      expect(move.to).toEqual({row: 0, col: 0});
+    }
+  });
+
+  test('stopping ends the search', () => {
+    const onDepth = jest.fn();
+    const stop = searchHint(fenToState(BACK_RANK), onDepth);
+    stop();
+    jest.runAllTimers();
+    expect(onDepth).not.toHaveBeenCalled();
   });
 });

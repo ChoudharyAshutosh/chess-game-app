@@ -1,7 +1,14 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import type { BoardEvent, BoardMoveHint, BoardState } from '../protocol';
+import type {
+  BoardEvent,
+  BoardMoveHint,
+  BoardState,
+  HintMove,
+} from '../protocol';
+import type { GameState } from '../../types/chess';
 import { assignPieces } from './assign';
+import { searchHint } from '../../utils/chessUtils';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { createPiece, isWhite, kindOf } from './pieces';
 
@@ -16,6 +23,8 @@ declare global {
         col: number,
         height?: number,
       ) => { x: number; y: number };
+      findHint: (id: number, state: unknown) => void;
+      stopHint: () => void;
     };
   }
 }
@@ -37,6 +46,7 @@ const COLORS = {
   move: 0x2e7d32,
   capture: 0xdc1e3c,
   check: 0xff1a1a,
+  hint: 0x00e5ff, // the suggested move: an arrow and its two squares
 };
 
 const BASE_MOVE_MS = 300;
@@ -347,6 +357,7 @@ function start() {
     return {
       selected: place(makeOverlay(tile, COLORS.selected, 0.55), 0.004),
       check: place(makeOverlay(tile, COLORS.check, 0.5), 0.005),
+      hint: place(makeOverlay(tile, COLORS.hint, 0.35), 0.0045),
       move: place(makeOverlay(dot, COLORS.move, 0.75), 0.006),
       capture: place(makeOverlay(ring, COLORS.capture, 0.85), 0.006),
     };
@@ -573,6 +584,54 @@ function start() {
     );
   };
 
+  // The hint arrow lies flat on the board, from the piece to its square. It
+  // pulses for a moment to catch the eye, then stays still (and costs nothing).
+  const HINT_PULSE_MS = 2400;
+  const hintMaterial = new THREE.MeshBasicMaterial({
+    color: COLORS.hint,
+    transparent: true,
+    opacity: 0.85,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+  const hintArrow = new THREE.Mesh(new THREE.BufferGeometry(), hintMaterial);
+  hintArrow.visible = false;
+  scene.add(hintArrow);
+  let hintKey = '';
+  let hintStart = 0;
+  const showHint = (hint: BoardState['hint']) => {
+    const key = hint
+      ? `${hint.from.row},${hint.from.col},${hint.to.row},${hint.to.col}`
+      : '';
+    if (key === hintKey) return;
+    hintKey = key;
+    hintArrow.visible = !!hint;
+    if (!hint) return;
+    const fromX = squareX(hint.from.col);
+    const fromZ = squareZ(hint.from.row);
+    const dx = squareX(hint.to.col) - fromX;
+    const dz = squareZ(hint.to.row) - fromZ;
+    const length = Math.hypot(dx, dz);
+    const gap = 0.3; // leave the piece itself uncovered
+    const headLength = 0.4;
+    const shaft = 0.09;
+    const headWidth = 0.26;
+    const shape = new THREE.Shape();
+    shape.moveTo(gap, -shaft);
+    shape.lineTo(length - headLength, -shaft);
+    shape.lineTo(length - headLength, -headWidth);
+    shape.lineTo(length - 0.05, 0);
+    shape.lineTo(length - headLength, headWidth);
+    shape.lineTo(length - headLength, shaft);
+    shape.lineTo(gap, shaft);
+    shape.closePath();
+    hintArrow.geometry.dispose();
+    hintArrow.geometry = new THREE.ShapeGeometry(shape).rotateX(Math.PI / 2);
+    hintArrow.position.set(fromX, 0.03, fromZ);
+    hintArrow.rotation.y = Math.atan2(-dz, dx);
+    hintStart = performance.now();
+  };
+
   const receive = (state: BoardState) => {
     startMoveHint(state.moving);
     syncBoard(state.board);
@@ -595,7 +654,15 @@ function start() {
         !!state.checkedKing &&
         state.checkedKing.row === row &&
         state.checkedKing.col === col;
+      // While a piece is selected the hint steps aside, so the selection and
+      // its move dots are clearly visible; it returns if the piece is let go.
+      const hint = state.selected ? null : state.hint;
+      overlay.hint.visible =
+        !!hint &&
+        ((hint.from.row === row && hint.from.col === col) ||
+          (hint.to.row === row && hint.to.col === col));
     });
+    showHint(state.selected ? null : state.hint ?? null);
 
     const king = state.checkedKing
       ? living.find(
@@ -680,6 +747,16 @@ function start() {
       return true;
     });
 
+    if (hintArrow.visible) {
+      const elapsed = now - hintStart;
+      if (elapsed < HINT_PULSE_MS) {
+        busy = true;
+        hintMaterial.opacity = 0.6 + 0.3 * Math.sin((elapsed / 600) * Math.PI);
+      } else {
+        hintMaterial.opacity = 0.85;
+      }
+    }
+
     // The king in check glows red.
     if (checkedKingId !== null) {
       const king = pieces.find(p => p.id === checkedKingId);
@@ -759,7 +836,22 @@ function start() {
     };
   };
 
-  window.board3d = { receive, squareToPage };
+  // Hints are searched here rather than in the app: this page keeps running
+  // while a full-screen ad covers the app, which pauses the app's JavaScript,
+  // so the hint is ready the moment the ad closes.
+  let stopHintSearch: (() => void) | null = null;
+  const stopHint = () => {
+    stopHintSearch?.();
+    stopHintSearch = null;
+  };
+  const findHint = (id: number, state: unknown) => {
+    stopHint();
+    stopHintSearch = searchHint(state as GameState, (move, depth) =>
+      send({ type: 'hint', id, move: move as HintMove | null, depth }),
+    );
+  };
+
+  window.board3d = { receive, squareToPage, findHint, stopHint };
   renderer.render(scene, camera);
   send({ type: 'ready' });
 }

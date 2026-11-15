@@ -24,9 +24,11 @@ const props = (overrides = {}) => ({
   ...overrides,
 });
 
+let handle;
 const render = (overrides = {}) =>
   act(() => {
-    renderer = ReactTestRenderer.create(<Board3D {...props(overrides)} />);
+    handle = React.createRef();
+    renderer = ReactTestRenderer.create(<Board3D ref={handle} {...props(overrides)} />);
   });
 const update = (overrides = {}) =>
   act(() => renderer.update(<Board3D {...props(overrides)} />));
@@ -35,9 +37,11 @@ const webView = () => renderer.root.findAllByProps({testID: 'webview'})[0];
 const fromBoard = message =>
   act(() => webView().props.onMessage({nativeEvent: {data: JSON.stringify(message)}}));
 const sentStates = () =>
-  WebView.mockInject.mock.calls.map(([script]) =>
-    JSON.parse(script.match(/receive\((.*)\); true;$/)[1]),
-  );
+  WebView.mockInject.mock.calls
+    .map(([script]) => script.match(/receive\((.*)\); true;$/))
+    .filter(Boolean)
+    .map(match => JSON.parse(match[1]));
+const scripts = () => WebView.mockInject.mock.calls.map(([script]) => script);
 
 beforeEach(() => {
   onSquarePress = jest.fn();
@@ -122,4 +126,50 @@ test('ignores messages it does not understand', () => {
   act(() => webView().props.onMessage({nativeEvent: {data: 'not json'}}));
   expect(renderer.root.findAllByProps({testID: 'board3d-loading'}).length).toBeGreaterThan(0);
   expect(onSquarePress).not.toHaveBeenCalled();
+});
+
+describe('hint search in the 3D page', () => {
+  const STATE = createInitialState();
+  const E2E4 = {from: {row: 6, col: 4}, to: {row: 4, col: 4}, piece: '♙', captured: null, promotion: null};
+
+  test('is not offered before the 3D board is ready, so the app searches itself', () => {
+    render();
+    expect(handle.current.findHint(STATE, jest.fn())).toBeNull();
+  });
+
+  test('sends the position and relays each depth found', () => {
+    render();
+    fromBoard({type: 'ready'});
+    const onDepth = jest.fn();
+    handle.current.findHint(STATE, onDepth);
+    const script = scripts().find(s => s.includes('findHint('));
+    const [, id, json] = script.match(/findHint\((\d+), (.*)\); true;$/);
+    expect(JSON.parse(json).board).toEqual(STATE.board);
+
+    fromBoard({type: 'hint', id: Number(id), move: E2E4, depth: 3});
+    expect(onDepth).toHaveBeenCalledWith(E2E4, 3);
+    fromBoard({type: 'hint', id: Number(id) + 1, move: E2E4, depth: 4}); // another search
+    expect(onDepth).toHaveBeenCalledTimes(1);
+  });
+
+  test('stopping tells the page and ignores later results', () => {
+    render();
+    fromBoard({type: 'ready'});
+    const onDepth = jest.fn();
+    const stop = handle.current.findHint(STATE, onDepth);
+    const [, id] = scripts().find(s => s.includes('findHint(')).match(/findHint\((\d+)/);
+    stop();
+    expect(scripts().some(s => s.includes('stopHint()'))).toBe(true);
+    fromBoard({type: 'hint', id: Number(id), move: E2E4, depth: 3});
+    expect(onDepth).not.toHaveBeenCalled();
+  });
+
+  test('a page reload loses the search, so the app can search itself', () => {
+    render();
+    fromBoard({type: 'ready'});
+    const onDepth = jest.fn();
+    handle.current.findHint(STATE, onDepth);
+    fromBoard({type: 'ready'});
+    expect(onDepth).toHaveBeenCalledWith(null, -1);
+  });
 });

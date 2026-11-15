@@ -13,6 +13,7 @@ const ChessBoard = ({
   onSquarePress,
   movingPiece,
   gameStatus,
+  hint,
 }) => {
   // Keeps the press handler stable so memoized squares are not all redrawn.
   const onSquarePressRef = useRef(onSquarePress);
@@ -54,6 +55,11 @@ const ChessBoard = ({
                   movingPiece.fromRow === rowIndex &&
                   movingPiece.fromCol === colIndex;
 
+                const isHint =
+                  !!hint &&
+                  ((hint.from.row === rowIndex && hint.from.col === colIndex) ||
+                    (hint.to.row === rowIndex && hint.to.col === colIndex));
+
                 const pieceType = getPieceType(piece);
                 const isKingInCheck = isInCheck && pieceType === 'king' && currentTurnColor === getPieceColor(piece);
 
@@ -69,6 +75,7 @@ const ChessBoard = ({
                     isMovingPiece={isMoving}
                     isSourcePiece={isSource}
                     isKingInCheck={isKingInCheck}
+                    isHint={isHint}
                   />
                 );
               })}

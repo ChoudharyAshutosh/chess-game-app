@@ -3,7 +3,7 @@ import {View, Text, TouchableOpacity, StyleSheet} from 'react-native';
 import {MaterialIcons} from '@react-native-vector-icons/material-icons/static';
 import {isGameOver as isFinished} from '../utils/chessUtils';
 
-const GameControls = ({gameStatus, onReset, onBack, onResign, onOfferDraw, canOfferDraw, onUndo, canUndo}) => {
+const GameControls = ({gameStatus, onReset, onBack, onResign, onOfferDraw, canOfferDraw, onUndo, canUndo, onHint, canHint}) => {
   const isGameOver = isFinished(gameStatus.status);
 
   return (
@@ -60,6 +60,17 @@ const GameControls = ({gameStatus, onReset, onBack, onResign, onOfferDraw, canOf
 
       {!isGameOver && (
         <TouchableOpacity
+          style={[styles.button, styles.hintButton, !canHint && styles.disabledButton]}
+          onPress={onHint}
+          disabled={!canHint}
+          activeOpacity={0.7}>
+          <MaterialIcons name="lightbulb-outline" size={20} color="#fff" />
+          <Text style={styles.buttonText}>Hint (Watch Ad)</Text>
+        </TouchableOpacity>
+      )}
+
+      {!isGameOver && (
+        <TouchableOpacity
           style={[styles.button, styles.resignButton]}
           onPress={onResign}
           activeOpacity={0.7}>
@@ -109,6 +120,10 @@ const styles = StyleSheet.create({
   undoButton: {
     backgroundColor: 'rgba(255, 193, 7, 0.2)',
     borderColor: 'rgba(255, 193, 7, 0.3)',
+  },
+  hintButton: {
+    backgroundColor: 'rgba(0, 188, 212, 0.2)',
+    borderColor: 'rgba(0, 188, 212, 0.35)',
   },
   resignButton: {
     backgroundColor: 'rgba(158, 158, 158, 0.2)',

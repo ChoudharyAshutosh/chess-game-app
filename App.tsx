@@ -16,7 +16,9 @@ import {
   GameOverModal,
   NoticeModal,
   PromotionModal,
+  HintBanner,
 } from './src/components';
+import type { Board3DHandle } from './src/components/Board3D';
 import {
   createInitialState,
   getValidMoves,
@@ -26,6 +28,7 @@ import {
   getPieceColor,
   getPieceType,
   searchMoveForLevel,
+  searchHint,
   isGameOver,
   opponentOf,
   shouldAcceptDraw,
@@ -68,6 +71,14 @@ interface PendingPromotion {
   previewBoard: Board;
 }
 
+// A hint being worked out for one position, while the player watches the ad.
+interface HintSearch {
+  game: GameState;
+  best: Move | null; // Deepest move found so far.
+  rewarded: boolean; // The ad finished, so the hint can be shown.
+  stop: () => void;
+}
+
 interface MoveSnapshot {
   game: GameState;
   capturedWhite: Piece[];
@@ -100,6 +111,26 @@ const UNDO_NOTICES = {
     title: 'No ad available',
     message: 'No ad is available right now. Please try again shortly.',
   },
+} satisfies Record<string, Notice>;
+
+const HINT_NOTICES = {
+  cancelled: {
+    icon: 'cancel',
+    title: 'Ad cancelled',
+    message: 'You closed the ad before it finished, so no hint is shown.',
+  },
+  failed: {
+    icon: 'error-outline',
+    title: 'Ad failed',
+    message:
+      'The ad could not be played, so no hint is shown. Please try again.',
+  },
+  offline: {
+    icon: 'wifi-off',
+    title: 'No internet',
+    message: 'Please connect to the internet to watch an ad and get a hint.',
+  },
+  unavailable: UNDO_NOTICES.unavailable,
 } satisfies Record<string, Notice>;
 
 const capitalize = (color: Color): string =>
@@ -144,6 +175,20 @@ const ChessGame = () => {
   // One snapshot per committed move, taken just before the move was played.
   const [history, setHistory] = useState<MoveSnapshot[]>([]);
   const [notice, setNotice] = useState<Notice | null>(null);
+  // The suggested move shown on the board, until the position changes.
+  const [hint, setHint] = useState<{
+    from: SquarePosition;
+    to: SquarePosition;
+    piece: Piece;
+    promotion: Piece | null;
+  } | null>(null);
+  // Whether the banner is asking the player to let the game play the hint.
+  const [hintAsking, setHintAsking] = useState(false);
+  const board3dRef = useRef<Board3DHandle>(null);
+  // From tapping Hint until the hint is shown (or the ad fails): the game is
+  // paused, so the position can't change under the hint being worked out.
+  const [hintBusy, setHintBusy] = useState(false);
+  const hintSearchRef = useRef<HintSearch | null>(null);
 
   const timeoutsRef = useRef(new Set<ReturnType<typeof setTimeout>>());
   const lastBackPressRef = useRef<number | null>(null);
@@ -158,7 +203,14 @@ const ChessGame = () => {
     !isMachineTurn &&
     !movingPiece &&
     !pendingPromotion &&
+    !hintBusy &&
     history.length >= movesToUndo;
+  const canHint =
+    !gameOver &&
+    !isMachineTurn &&
+    !movingPiece &&
+    !pendingPromotion &&
+    !hintBusy;
 
   const schedule = useCallback((fn: () => void, ms: number) => {
     const id = setTimeout(() => {
@@ -175,6 +227,19 @@ const ChessGame = () => {
   }, []);
 
   useEffect(() => clearScheduled, [clearScheduled]);
+
+  const stopHintSearch = useCallback(() => {
+    hintSearchRef.current?.stop();
+    hintSearchRef.current = null;
+    setHintBusy(false);
+  }, []);
+
+  // A hint belongs to one position: any move, undo or restart clears it.
+  useEffect(() => {
+    setHint(null);
+    stopHintSearch();
+  }, [game, stopHintSearch]);
+  useEffect(() => stopHintSearch, [stopHintSearch]);
 
   const handleBackPress = useCallback(() => {
     if (
@@ -328,7 +393,7 @@ const ChessGame = () => {
   }, [resetGame]);
 
   const handleResign = useCallback(() => {
-    if (gameOver || movingPiece) return;
+    if (gameOver || movingPiece || hintBusy) return;
     const resigning = gameMode === 'PvM' ? 'white' : game.turn;
     const label =
       gameMode === 'PvM' ? 'Do you' : `${capitalize(resigning)}, do you`;
@@ -355,7 +420,15 @@ const ChessGame = () => {
         },
       ],
     });
-  }, [gameOver, movingPiece, gameMode, game, clearScheduled, finishGame]);
+  }, [
+    gameOver,
+    movingPiece,
+    hintBusy,
+    gameMode,
+    game,
+    clearScheduled,
+    finishGame,
+  ]);
 
   const handleUndo = useCallback(() => {
     if (!canUndo) return;
@@ -384,8 +457,104 @@ const ChessGame = () => {
     }
   }, [canUndo, history, movesToUndo]);
 
+  // The hint is worked out while the ad plays, and shown once it has finished.
+  const handleHint = useCallback(() => {
+    if (!canHint) return;
+    stopHintSearch();
+    setHint(null);
+    setSelectedSquare(null);
+    setValidMoves([]);
+    setHintBusy(true);
+    const search: HintSearch = {
+      game,
+      best: null,
+      rewarded: false,
+      stop: () => {},
+    };
+    const reveal = () => {
+      if (hintSearchRef.current !== search || !search.best) return;
+      const { from, to, promotion } = search.best;
+      setHint({
+        from,
+        to,
+        piece: search.game.board[from.row][from.col],
+        promotion: promotion ?? null,
+      });
+      setHintAsking(true);
+      stopHintSearch();
+    };
+    hintSearchRef.current = search;
+    const onDepth = (move: Move | null, depth: number) => {
+      if (hintSearchRef.current !== search) return;
+      if (depth < 0) {
+        // The 3D board's search was lost (crash or reload): search here instead.
+        search.stop = searchHint(search.game, onDepth);
+        return;
+      }
+      if (move) search.best = move;
+      if (search.rewarded) reveal();
+    };
+    // Searched in the 3D board's page when it's running, as that keeps going
+    // while the ad covers the app; otherwise here, which waits for the ad to close.
+    search.stop =
+      board3dRef.current?.findHint(game, onDepth) ?? searchHint(game, onDepth);
+    const fail = (failure: Notice) => {
+      if (hintSearchRef.current === search) stopHintSearch();
+      setNotice(failure);
+    };
+
+    const result = showRewardedAd({
+      onReward: () => {
+        if (hintSearchRef.current !== search) return;
+        search.rewarded = true;
+        // Show the deepest move found so far; if none yet, the first one found.
+        if (search.best) reveal();
+      },
+      onCancel: () => fail(HINT_NOTICES.cancelled),
+      onError: () => fail(HINT_NOTICES.failed),
+    });
+    if (result === 'offline') fail(HINT_NOTICES.offline);
+    else if (result === 'unavailable') fail(HINT_NOTICES.unavailable);
+  }, [canHint, game, stopHintSearch]);
+
+  // Plays the suggested move for the player, if they agree to it.
+  const handlePlayHint = useCallback(() => {
+    if (!hint || gameOver || isMachineTurn || movingPiece || pendingPromotion)
+      return;
+    const { from, to, promotion } = hint;
+    setHintAsking(false);
+    setSelectedSquare(null);
+    setValidMoves([]);
+    playSelectSound();
+    setMovingPiece({
+      fromRow: from.row,
+      fromCol: from.col,
+      toRow: to.row,
+      toCol: to.col,
+      isCapture: !!game.board[to.row][to.col],
+    });
+    schedule(
+      () =>
+        commitMove(
+          from,
+          to,
+          (promotion && getPieceType(promotion)) || undefined,
+        ),
+      MOVE_ANIMATION_MS,
+    );
+  }, [
+    hint,
+    gameOver,
+    isMachineTurn,
+    movingPiece,
+    pendingPromotion,
+    game,
+    schedule,
+    commitMove,
+  ]);
+
   const handleOfferDraw = useCallback(() => {
-    if (gameOver || isMachineTurn || movingPiece) return;
+    if (gameOver || isMachineTurn || movingPiece || hintBusy) return;
     const drawStatus: GameStatus = {
       status: 'draw',
       reason: 'agreement',
@@ -423,11 +592,26 @@ const ChessGame = () => {
         { label: 'Accept', onPress: () => finishGame(drawStatus) },
       ],
     });
-  }, [gameOver, isMachineTurn, movingPiece, gameMode, game, finishGame]);
+  }, [
+    gameOver,
+    isMachineTurn,
+    movingPiece,
+    hintBusy,
+    gameMode,
+    game,
+    finishGame,
+  ]);
 
   const handleSquarePress = useCallback(
     (row: number, col: number) => {
-      if (isMachineTurn || gameOver || movingPiece || pendingPromotion) return;
+      if (
+        isMachineTurn ||
+        gameOver ||
+        movingPiece ||
+        pendingPromotion ||
+        hintBusy
+      )
+        return;
 
       const piece = game.board[row][col];
 
@@ -495,6 +679,7 @@ const ChessGame = () => {
       gameOver,
       movingPiece,
       pendingPromotion,
+      hintBusy,
       schedule,
       commitMove,
     ],
@@ -511,6 +696,7 @@ const ChessGame = () => {
         >
           <View style={styles.boardSection}>
             <Board3D
+              ref={board3dRef}
               board={
                 pendingPromotion ? pendingPromotion.previewBoard : game.board
               }
@@ -519,6 +705,7 @@ const ChessGame = () => {
               onSquarePress={handleSquarePress}
               movingPiece={movingPiece}
               gameStatus={gameStatus}
+              hint={hint}
             />
           </View>
 
@@ -533,6 +720,17 @@ const ChessGame = () => {
                 gameStatus={gameStatus}
                 isThinking={isMachineTurn && !gameOver}
               />
+              {(hintBusy || hint) && (
+                <View style={styles.hintBanner} pointerEvents="box-none">
+                  <HintBanner
+                    color={game.turn}
+                    move={hint}
+                    asking={hintAsking && !movingPiece}
+                    onPlay={handlePlayHint}
+                    onDismiss={() => setHintAsking(false)}
+                  />
+                </View>
+              )}
 
               <GameControls
                 gameStatus={gameStatus}
@@ -540,9 +738,11 @@ const ChessGame = () => {
                 onBack={handleBackToMenu}
                 onResign={handleResign}
                 onOfferDraw={handleOfferDraw}
-                canOfferDraw={!isMachineTurn}
+                canOfferDraw={!isMachineTurn && !hintBusy}
                 onUndo={handleUndo}
                 canUndo={canUndo}
+                onHint={handleHint}
+                canHint={canHint}
               />
             </View>
           )}
@@ -608,6 +808,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingVertical: 10,
+  },
+  // Shown over the score panel, so it never covers the board or the arrow.
+  hintBanner: {
+    position: 'absolute',
+    top: 0,
+    left: 16,
+    right: 16,
+    zIndex: 1,
   },
   infoSection: {
     paddingBottom: 10,

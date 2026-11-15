@@ -1032,6 +1032,31 @@ export const searchMoveForLevel = (state, level, onDone) => {
   return () => clearTimeout(timer);
 };
 
+// Hints search deeper than the machine's Hard level: depth 3 is ready almost
+// at once, and depth 4 (stronger than Hard) usually finishes while the ad plays.
+export const HINT_MIN_DEPTH = 3;
+export const HINT_MAX_DEPTH = 4;
+
+// Finds a move to suggest to the player, in the background. Calls onDepth with
+// the best move after each finished depth, from HINT_MIN_DEPTH up to
+// HINT_MAX_DEPTH. Returns a function that stops the search.
+export const searchHint = (state, onDepth) => {
+  let stopped = false;
+  let cancel = () => {};
+  const run = depth => {
+    cancel = searchBestMove(state, depth, move => {
+      if (stopped) return;
+      onDepth(move, depth);
+      if (move && depth < HINT_MAX_DEPTH) run(depth + 1);
+    });
+  };
+  run(HINT_MIN_DEPTH);
+  return () => {
+    stopped = true;
+    cancel();
+  };
+};
+
 // Search score for the side to move, in centipawns.
 export const evaluatePosition = (state, depth = 2) => {
   const scored = scoreRootMoves(state, depth);

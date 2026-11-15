@@ -35,6 +35,13 @@ export const searchMoveForLevel: (
   level: MachineLevel,
   onDone: (move: Move | null) => void,
 ) => () => void;
+export const HINT_MIN_DEPTH: number;
+export const HINT_MAX_DEPTH: number;
+export const searchHint: (
+  state: GameState,
+  onDepth: (move: Move | null, depth: number) => void,
+) => () => void;
+export const squareToAlgebraic: (square: SquarePosition) => string;
 export const isGameOver: (status: GameStatus['status']) => boolean;
 export const opponentOf: (color: Color) => Color;
 export const shouldAcceptDraw: (state: GameState, color: Color) => boolean;
