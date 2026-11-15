@@ -1,8 +1,68 @@
-import React from 'react';
-import {View, Text, StyleSheet} from 'react-native';
+import React, {useEffect, useRef, useState} from 'react';
+import {ScrollView, View, Text, StyleSheet} from 'react-native';
 import ThinkingIndicator from './ThinkingIndicator';
 
 const LEVEL_NAMES = {easy: 'Easy', medium: 'Medium', hard: 'Hard'};
+// The taken-pieces row: the panel's colour with a light tint, made solid.
+const STRIP_COLOR = '#151424';
+
+// Every taken piece in one swipeable row of a fixed height, so the panel never
+// grows and pushes the board up. It scrolls to show the newest capture, and a
+// small arrow on either side shows that more pieces are hidden that way.
+const CapturedPieces = ({pieces}) => {
+  const scrollRef = useRef(null);
+  const [viewWidth, setViewWidth] = useState(0);
+  const [contentWidth, setContentWidth] = useState(0);
+  const [offset, setOffset] = useState(0);
+  // Show the newest capture. Android ignores a scroll asked for before the row
+  // is laid out, so it's asked for again once both sizes are known.
+  useEffect(() => {
+    if (!viewWidth || !contentWidth) return;
+    const id = setTimeout(() => scrollRef.current?.scrollToEnd({animated: true}), 30);
+    return () => clearTimeout(id);
+  }, [pieces.length, viewWidth, contentWidth]);
+  if (pieces.length === 0) {
+    return (
+      <View style={styles.noCapturesBox}>
+        <Text style={styles.noCaptures}>-</Text>
+      </View>
+    );
+  }
+
+  const hiddenLeft = offset > 2;
+  const hiddenRight = contentWidth - viewWidth - offset > 2;
+  return (
+    <View style={styles.capturedBox}>
+      <ScrollView
+        ref={scrollRef}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.capturedRow}
+        onLayout={e => setViewWidth(e.nativeEvent.layout.width)}
+        onContentSizeChange={width => setContentWidth(width)}
+        onScroll={e => setOffset(e.nativeEvent.contentOffset.x)}
+        onMomentumScrollEnd={e => setOffset(e.nativeEvent.contentOffset.x)}
+        scrollEventThrottle={32}
+        testID="captured-pieces">
+        {pieces.map((piece, index) => (
+          <Text key={index} style={styles.capturedPiece}>
+            {piece}
+          </Text>
+        ))}
+      </ScrollView>
+      {hiddenLeft && (
+        <View style={[styles.moreHint, styles.moreLeft]} pointerEvents="none">
+          <Text style={styles.moreText}>‹</Text>
+        </View>
+      )}
+      {hiddenRight && (
+        <View style={[styles.moreHint, styles.moreRight]} pointerEvents="none">
+          <Text style={styles.moreText}>›</Text>
+        </View>
+      )}
+    </View>
+  );
+};
 
 const ScoreBoard = ({
   currentTurn,
@@ -34,21 +94,13 @@ const ScoreBoard = ({
 
   return (
     <View style={styles.container}>
+      <View style={styles.topRow}>
       <View style={styles.playerCard}>
         <View style={[styles.indicator, currentTurn === 'white' && styles.activeIndicator]} />
         <View style={styles.playerInfo}>
           <Text style={styles.playerLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
             White
           </Text>
-          <View style={styles.piecesRow}>
-            {capturedBlack.length > 0 ? (
-              capturedBlack.map((piece, index) => (
-                <Text key={index} style={styles.capturedPiece}>{piece}</Text>
-              ))
-            ) : (
-              <Text style={styles.noCaptures}>-</Text>
-            )}
-          </View>
         </View>
         <View style={styles.scoreContainer}>
           <Text style={styles.scoreLabel}>Taken</Text>
@@ -67,7 +119,11 @@ const ScoreBoard = ({
         {isThinking ? (
           <ThinkingIndicator />
         ) : (
-          <Text style={styles.turnText}>
+          <Text
+            style={styles.turnText}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.7}>
             {gameMode === 'PvM'
               ? (currentTurn === 'white' ? "Your Turn" : "Machine")
               : (currentTurn === 'white' ? "White's Turn" : "Black's Turn")
@@ -82,19 +138,22 @@ const ScoreBoard = ({
           <Text style={styles.playerLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
             {gameMode === 'PvM' ? `Machine (${LEVEL_NAMES[machineLevel]})` : 'Black'}
           </Text>
-          <View style={styles.piecesRow}>
-            {capturedWhite.length > 0 ? (
-              capturedWhite.map((piece, index) => (
-                <Text key={index} style={styles.capturedPiece}>{piece}</Text>
-              ))
-            ) : (
-              <Text style={styles.noCaptures}>-</Text>
-            )}
-          </View>
         </View>
         <View style={styles.scoreContainer}>
           <Text style={styles.scoreLabel}>Taken</Text>
           <Text style={styles.score}>{capturedWhite.length}</Text>
+        </View>
+      </View>
+      </View>
+
+      {/* What each side has taken, under its card, in rows of a fixed height. */}
+      <View style={styles.capturedStrip}>
+        <View style={styles.capturedHalf}>
+          <CapturedPieces pieces={capturedBlack} />
+        </View>
+        <View style={styles.capturedDivider} />
+        <View style={styles.capturedHalf}>
+          <CapturedPieces pieces={capturedWhite} />
         </View>
       </View>
     </View>
@@ -103,7 +162,6 @@ const ScoreBoard = ({
 
 const styles = StyleSheet.create({
   container: {
-    flexDirection: 'row',
     backgroundColor: 'rgba(0, 0, 0, 0.4)',
     paddingVertical: 12,
     paddingHorizontal: 12,
@@ -112,6 +170,28 @@ const styles = StyleSheet.create({
     marginTop: 8,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  topRow: {
+    flexDirection: 'row',
+  },
+  // Opaque, so the arrows can match it exactly; the rounded corners clip them.
+  capturedStrip: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    marginTop: 8,
+    height: 30,
+    backgroundColor: STRIP_COLOR,
+    borderRadius: 10,
+    overflow: 'hidden',
+  },
+  capturedHalf: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  capturedDivider: {
+    width: 1,
+    marginVertical: 6,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
   },
   playerCard: {
     flex: 1,
@@ -139,18 +219,47 @@ const styles = StyleSheet.create({
   },
   playerLabel: {
     color: '#fff',
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600',
-    marginBottom: 4,
   },
-  piecesRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+  capturedBox: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  capturedRow: {
+    alignItems: 'center',
+    paddingHorizontal: 8,
   },
   capturedPiece: {
-    fontSize: 12,
-    marginRight: 1,
+    fontSize: 18,
+    lineHeight: 24,
+    marginRight: 3,
     color: '#fff',
+  },
+  // Covers the edge pieces like a fade, with an arrow, where more are hidden.
+  moreHint: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    width: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: STRIP_COLOR,
+  },
+  moreLeft: {
+    left: 0,
+  },
+  moreRight: {
+    right: 0,
+  },
+  moreText: {
+    color: '#FFD700',
+    fontSize: 16,
+    fontWeight: 'bold',
+    lineHeight: 18,
+  },
+  noCapturesBox: {
+    paddingHorizontal: 8,
   },
   noCaptures: {
     color: 'rgba(255, 255, 255, 0.3)',

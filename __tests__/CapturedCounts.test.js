@@ -3,7 +3,7 @@
  */
 
 import React from 'react';
-import {Text} from 'react-native';
+import {ScrollView, Text} from 'react-native';
 import ReactTestRenderer from 'react-test-renderer';
 import {GameOverModal, ScoreBoard} from '../src/components';
 
@@ -51,4 +51,59 @@ test('the game-over screen counts pieces taken instead of adding up piece values
   expect(shown).toEqual(expect.arrayContaining([2, 1]));
   expect(shown).not.toContain(10);
   expect(shown).not.toContain(5);
+});
+
+test('every taken piece is shown in one swipeable row', () => {
+  let renderer;
+  const taken = ['♟', '♞', '♟', '♟', '♛', '♟', '♟'];
+  act(() => {
+    renderer = ReactTestRenderer.create(
+      <ScoreBoard
+        capturedBlack={taken}
+        capturedWhite={[]}
+        currentTurn="white"
+        gameMode="PvP"
+        gameStatus={{status: 'playing', currentTurn: 'white'}}
+      />,
+    );
+  });
+  const row = renderer.root.findByType(ScrollView);
+  expect(row.props.horizontal).toBe(true);
+  expect(row.findAllByType(Text).map(t => t.props.children)).toEqual(taken);
+  act(() => renderer.unmount());
+});
+
+test('arrows show which side of the row has more pieces hidden', () => {
+  let renderer;
+  act(() => {
+    renderer = ReactTestRenderer.create(
+      <ScoreBoard
+        capturedBlack={['♟', '♟', '♟', '♟', '♟', '♟', '♟', '♟', '♞', '♝']}
+        capturedWhite={[]}
+        currentTurn="white"
+        gameMode="PvP"
+        gameStatus={{status: 'playing', currentTurn: 'white'}}
+      />,
+    );
+  });
+  const row = renderer.root.findByType(ScrollView);
+  const arrows = () =>
+    renderer.root
+      .findAllByType(Text)
+      .map(t => t.props.children)
+      .filter(c => c === '‹' || c === '›');
+  expect(arrows()).toEqual([]);
+
+  // 200 wide, showing 100: scrolled to the newest, older pieces hidden left.
+  act(() => row.props.onLayout({nativeEvent: {layout: {width: 100}}}));
+  act(() => row.props.onContentSizeChange(200, 24));
+  act(() => row.props.onScroll({nativeEvent: {contentOffset: {x: 100}}}));
+  expect(arrows()).toEqual(['‹']);
+
+  act(() => row.props.onScroll({nativeEvent: {contentOffset: {x: 50}}}));
+  expect(arrows()).toEqual(['‹', '›']);
+
+  act(() => row.props.onScroll({nativeEvent: {contentOffset: {x: 0}}}));
+  expect(arrows()).toEqual(['›']);
+  act(() => renderer.unmount());
 });
