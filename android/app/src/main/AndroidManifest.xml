@@ -2,6 +2,15 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- Advertising ID, used by Google Mobile Ads (rewarded ads) for ad
+         selection, measurement and fraud prevention. The ads SDK also adds
+         these itself; they are listed here so the app states them directly.
+         Declare "Yes, Advertising ID" in the Play Console to match. -->
+    <uses-permission android:name="com.google.android.gms.permission.AD_ID" />
+    <uses-permission android:name="android.permission.ACCESS_ADSERVICES_AD_ID" />
+    <uses-permission android:name="android.permission.ACCESS_ADSERVICES_ATTRIBUTION" />
+    <uses-permission android:name="android.permission.ACCESS_ADSERVICES_TOPICS" />
+
     <application
       android:name=".MainApplication"
       android:label="@string/app_name"
