@@ -594,15 +594,16 @@ describe('hint', () => {
     expect(renderer.root.findAllByType(HintBanner)).toHaveLength(0);
   });
 
-  test('on no, keeps the hint for the player to play themselves', async () => {
+  test('on no, removes the hint and its message', async () => {
     await start('PvP');
     askForHint();
     act(() => onDepth(E2E4, 3));
     act(() => ad.onReward());
     act(() => renderer.root.findByType(HintBanner).props.onDismiss());
-    expect(renderer.root.findByType(HintBanner).props.asking).toBe(false);
-    expect(hintShown()).toMatchObject(E2E4);
+    expect(hintShown()).toBeNull();
+    expect(renderer.root.findAllByType(HintBanner)).toHaveLength(0);
     expect(at('e2')).toBe('♙');
+    expect(controls().canHint).toBe(true);
   });
 
   test('falls back to searching in the app if the 3D search is lost', async () => {

@@ -727,7 +727,11 @@ const ChessGame = () => {
                     move={hint}
                     asking={hintAsking && !movingPiece}
                     onPlay={handlePlayHint}
-                    onDismiss={() => setHintAsking(false)}
+                    onDismiss={() => {
+                      // Turning the hint down removes it from the board too.
+                      setHintAsking(false);
+                      setHint(null);
+                    }}
                   />
                 </View>
               )}
